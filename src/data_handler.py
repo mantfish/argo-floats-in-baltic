@@ -131,7 +131,6 @@ def _fetch_cmems(
         minimum_depth=0.0,
         maximum_depth=CMEMS_DEPTH_MAX,
         output_filename="cmems_subset.nc",
-        overwrite_output_data=True,
     )
     if issue_time is not None:
         kwargs["start_datetime"] = issue_time.strftime("%Y-%m-%dT%H:%M:%S")
