@@ -179,13 +179,15 @@ def _fetch_cmems(
 
 # -- FCOO --------------------------------------------------------------------
 
-_fcoo_file_cache: str | None = None  # path of last downloaded file -- skip re-probe
+_fcoo_file_cache: Path | None = None  # path of last successfully located file
 
 
 def _fetch_fcoo(model: str, region: Region) -> xr.Dataset:
     """Read the requested FCOO grid from the nested 3-D file into memory."""
-    local = _get_fcoo_file()
-    return _read_fcoo_grid(local, suffix=_FCOO_SUFFIX[model], region=region)
+    global _fcoo_file_cache
+    if _fcoo_file_cache is None:
+        _fcoo_file_cache = _get_fcoo_file()
+    return _read_fcoo_grid(_fcoo_file_cache, suffix=_FCOO_SUFFIX[model], region=region)
 
 
 def _read_fcoo_grid(path: Path, suffix: str, region: Region) -> xr.Dataset:
@@ -247,9 +249,11 @@ def _get_fcoo_file(cache_dir: Path = FCOO_CACHE_DIR) -> Path:
     """
     Return path to the latest FCOO 3-D velocity NetCDF, downloading if needed.
 
-    Retries up to 3 times using HTTP Range headers to resume partial downloads.
-    If all attempts fail, falls back to the most recently cached file so that
-    a transient server hiccup doesn't kill the whole pipeline run.
+    Retries up to 10 times using HTTP Range headers to resume partial downloads.
+    The partial .tmp file is intentionally preserved on failure so that:
+      - both fcoo_dk and fcoo_idk calls accumulate bytes into the same file
+      - the Actions cache saves the partial file across pipeline runs
+    If all attempts fail, falls back to the most recently completed cached file.
     """
     cache_dir = Path(cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
@@ -262,14 +266,14 @@ def _get_fcoo_file(cache_dir: Path = FCOO_CACHE_DIR) -> Path:
     tmp = local.with_suffix(".nc.tmp")
     last_exc: Exception | None = None
 
-    for attempt in range(3):
+    for attempt in range(10):
         try:
             existing = tmp.stat().st_size if tmp.exists() else 0
             headers  = {"Range": f"bytes={existing}-"} if existing > 0 else {}
             if existing:
-                logger.info("Resuming FCOO download at %.1f MB (attempt %d)", existing / 1e6, attempt + 1)
+                logger.info("Resuming FCOO download at %.1f MB (attempt %d/10)", existing / 1e6, attempt + 1)
             else:
-                logger.info("Downloading FCOO file: %s (attempt %d)", url, attempt + 1)
+                logger.info("Downloading FCOO file: %s (attempt %d/10)", url, attempt + 1)
 
             r = requests.get(url, timeout=300, stream=True, headers=headers)
             if r.status_code == 416:
@@ -294,16 +298,25 @@ def _get_fcoo_file(cache_dir: Path = FCOO_CACHE_DIR) -> Path:
 
         except Exception as exc:
             last_exc = exc
-            logger.warning("FCOO download attempt %d failed: %s", attempt + 1, exc)
+            # Keep the .tmp file so the next attempt (or the next pipeline run
+            # via the Actions cache) can resume from however far we got.
+            existing_after = tmp.stat().st_size if tmp.exists() else 0
+            logger.warning(
+                "FCOO download attempt %d/10 failed at %.1f MB: %s",
+                attempt + 1, existing_after / 1e6, exc,
+            )
 
-    # All attempts failed -- fall back to the most recently downloaded cached file.
+    # All attempts failed -- fall back to the most recently completed cached file.
     candidates = sorted(cache_dir.glob("dk_nested.velocities.Z3D_*.nc"), key=lambda p: p.stat().st_mtime)
-    tmp.unlink(missing_ok=True)
     if candidates:
         fallback = candidates[-1]
         logger.warning("Using cached fallback FCOO file: %s", fallback.name)
         return fallback
-    raise RuntimeError(f"FCOO download failed after 3 attempts and no cached fallback exists") from last_exc
+    raise RuntimeError(
+        f"FCOO download failed after 10 attempts and no cached fallback exists. "
+        f"The server at data.fcoo.dk may be rate-limiting this IP. "
+        f"Run the pipeline locally to prime the cache."
+    ) from last_exc
 
 
 def _get_latest_fcoo_url() -> str:
