@@ -106,7 +106,20 @@ def _fetch_cmems(
     issue_time: Optional[datetime],
     end_time: Optional[datetime] = None,
 ) -> xr.Dataset:
+    """
+    Download a CMEMS subset to a local NetCDF4 file, then load it into memory.
+
+    Uses copernicusmarine.subset() (a single HTTP download) instead of
+    open_dataset() (hundreds of parallel dask/zarr chunk requests).  The
+    single-stream download is faster on CI runners, avoids connection-pool
+    exhaustion, and sidesteps the Python 3.14 + dask SIGSEGV.
+
+    Spatial grid is subsampled 2x after loading (stride-indexed reads, so
+    only ~2.5 GB is pulled into memory rather than ~10 GB for the full grid).
+    """
     import copernicusmarine
+    import tempfile
+    import os
 
     kwargs: dict = dict(
         dataset_id=CMEMS_DATASET_ID,
@@ -117,25 +130,51 @@ def _fetch_cmems(
         maximum_longitude=region.lon_max,
         minimum_depth=0.0,
         maximum_depth=CMEMS_DEPTH_MAX,
+        output_filename="cmems_subset.nc",
+        overwrite_output_data=True,
     )
     if issue_time is not None:
         kwargs["start_datetime"] = issue_time.strftime("%Y-%m-%dT%H:%M:%S")
     if end_time is not None:
         kwargs["end_datetime"] = end_time.strftime("%Y-%m-%dT%H:%M:%S")
 
-    ds = copernicusmarine.open_dataset(**kwargs)
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        kwargs["output_directory"] = tmp_dir
+        tmp_path = os.path.join(tmp_dir, "cmems_subset.nc")
 
-    rename = {}
-    for old, new in [("uo", "u"), ("vo", "v"), ("latitude", "lat"), ("longitude", "lon")]:
-        if old in ds:
-            rename[old] = new
-    ds = ds.rename(rename) if rename else ds
+        logger.info("Downloading CMEMS subset (single-stream)…")
+        copernicusmarine.subset(**kwargs)
+        logger.info("CMEMS subset downloaded, loading into memory")
 
-    # Subsample the spatial grid by 2x to halve the in-memory footprint when
-    # build_interpolators loads .values.  0.054° resolution is still well
-    # within the ~10-20 km position-error scale we're scoring at.
-    ds = ds.isel(lat=slice(None, None, 2), lon=slice(None, None, 2))
-    return ds
+        # Open without dask -- file-backed lazy reads via xarray+netCDF4.
+        # isel with a slice does a strided read from the file so peak memory
+        # is only the subsampled shape, not the full spatial grid.
+        ds = xr.open_dataset(tmp_path, chunks=None, mask_and_scale=True)
+
+        lat_dim = "latitude" if "latitude" in ds.dims else "lat"
+        lon_dim = "longitude" if "longitude" in ds.dims else "lon"
+        ds = ds.isel(**{lat_dim: slice(None, None, 2), lon_dim: slice(None, None, 2)})
+
+        rename = {}
+        for old, new in [("uo", "u"), ("vo", "v"), ("latitude", "lat"), ("longitude", "lon")]:
+            if old in ds:
+                rename[old] = new
+        ds = ds.rename(rename) if rename else ds
+
+        # Force into a plain in-memory Dataset (no file handles) before the
+        # temp directory is deleted.
+        return xr.Dataset(
+            {
+                "u": (["time", "depth", "lat", "lon"], ds["u"].values.astype(np.float32)),
+                "v": (["time", "depth", "lat", "lon"], ds["v"].values.astype(np.float32)),
+            },
+            coords={
+                "time":  ds["time"].values,
+                "depth": ds["depth"].values.astype(np.float64),
+                "lat":   ds["lat"].values.astype(np.float64),
+                "lon":   ds["lon"].values.astype(np.float64),
+            },
+        )
 
 
 # -- FCOO --------------------------------------------------------------------
