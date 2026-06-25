@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-06-25T08:34:52.559513",
+  "updated_at": "2026-06-25T08:58:31.779726",
   "floats": [
     {
       "float_id": "1902766",
@@ -18,18 +18,6 @@
         "ascent_speed_ms": 0.04870427558600733
       },
       "models": {
-        "fcoo_idk": {
-          "display_name": "FCOO IDK (600 m)",
-          "color": "#98D8C8",
-          "predicted_now": null,
-          "next_surfacing_time": "2026-06-25T14:09:24.229726",
-          "next_surfacing_position": {
-            "lat": 55.56718,
-            "lon": 15.90675
-          },
-          "trajectory_history": [],
-          "missed_model_pulls": 0
-        },
         "fcoo_dk": {
           "display_name": "FCOO DK (coarse)",
           "color": "#FF8C42",
@@ -40,7 +28,19 @@
             "lon": 15.90675
           },
           "trajectory_history": [],
-          "missed_model_pulls": 0
+          "missed_model_pulls": 1
+        },
+        "fcoo_idk": {
+          "display_name": "FCOO IDK (600 m)",
+          "color": "#98D8C8",
+          "predicted_now": null,
+          "next_surfacing_time": "2026-06-25T14:09:24.229726",
+          "next_surfacing_position": {
+            "lat": 55.56718,
+            "lon": 15.90675
+          },
+          "trajectory_history": [],
+          "missed_model_pulls": 1
         },
         "cmems": {
           "display_name": "CMEMS Baltic",
@@ -52,7 +52,7 @@
             "lon": 15.90675
           },
           "trajectory_history": [],
-          "missed_model_pulls": 0
+          "missed_model_pulls": 1
         }
       }
     },
@@ -73,24 +73,6 @@
         "ascent_speed_ms": 0.07434772604075023
       },
       "models": {
-        "fcoo_idk": {
-          "display_name": "FCOO IDK (600 m)",
-          "color": "#98D8C8",
-          "predicted_now": null,
-          "next_surfacing_time": "2026-06-26T06:58:24.537790",
-          "next_surfacing_position": {
-            "lat": 55.13394,
-            "lon": 18.97893
-          },
-          "trajectory_history": [
-            {
-              "t": "2026-06-24T10:36:00",
-              "lat": 55.13394,
-              "lon": 18.97893
-            }
-          ],
-          "missed_model_pulls": 0
-        },
         "fcoo_dk": {
           "display_name": "FCOO DK (coarse)",
           "color": "#FF8C42",
@@ -107,7 +89,25 @@
               "lon": 18.97893
             }
           ],
-          "missed_model_pulls": 0
+          "missed_model_pulls": 1
+        },
+        "fcoo_idk": {
+          "display_name": "FCOO IDK (600 m)",
+          "color": "#98D8C8",
+          "predicted_now": null,
+          "next_surfacing_time": "2026-06-26T06:58:24.537790",
+          "next_surfacing_position": {
+            "lat": 55.13394,
+            "lon": 18.97893
+          },
+          "trajectory_history": [
+            {
+              "t": "2026-06-24T10:36:00",
+              "lat": 55.13394,
+              "lon": 18.97893
+            }
+          ],
+          "missed_model_pulls": 1
         },
         "cmems": {
           "display_name": "CMEMS Baltic",
@@ -125,7 +125,7 @@
               "lon": 18.97893
             }
           ],
-          "missed_model_pulls": 0
+          "missed_model_pulls": 1
         }
       }
     },
@@ -146,24 +146,6 @@
         "ascent_speed_ms": 0.0655529515938464
       },
       "models": {
-        "fcoo_idk": {
-          "display_name": "FCOO IDK (600 m)",
-          "color": "#98D8C8",
-          "predicted_now": null,
-          "next_surfacing_time": "2026-06-26T00:11:27.065915",
-          "next_surfacing_position": {
-            "lat": 57.10106,
-            "lon": 20.03015
-          },
-          "trajectory_history": [
-            {
-              "t": "2026-06-20T01:25:08",
-              "lat": 57.10106,
-              "lon": 20.03015
-            }
-          ],
-          "missed_model_pulls": 1
-        },
         "fcoo_dk": {
           "display_name": "FCOO DK (coarse)",
           "color": "#FF8C42",
@@ -180,7 +162,25 @@
               "lon": 20.03015
             }
           ],
-          "missed_model_pulls": 1
+          "missed_model_pulls": 2
+        },
+        "fcoo_idk": {
+          "display_name": "FCOO IDK (600 m)",
+          "color": "#98D8C8",
+          "predicted_now": null,
+          "next_surfacing_time": "2026-06-26T00:11:27.065915",
+          "next_surfacing_position": {
+            "lat": 57.10106,
+            "lon": 20.03015
+          },
+          "trajectory_history": [
+            {
+              "t": "2026-06-20T01:25:08",
+              "lat": 57.10106,
+              "lon": 20.03015
+            }
+          ],
+          "missed_model_pulls": 2
         },
         "cmems": {
           "display_name": "CMEMS Baltic",
@@ -198,7 +198,7 @@
               "lon": 20.03015
             }
           ],
-          "missed_model_pulls": 1
+          "missed_model_pulls": 2
         }
       }
     },
@@ -219,24 +219,6 @@
         "ascent_speed_ms": 0.09208446553844221
       },
       "models": {
-        "fcoo_idk": {
-          "display_name": "FCOO IDK (600 m)",
-          "color": "#98D8C8",
-          "predicted_now": null,
-          "next_surfacing_time": "2026-06-26T05:01:54.361197",
-          "next_surfacing_position": {
-            "lat": 56.3424,
-            "lon": 19.34881
-          },
-          "trajectory_history": [
-            {
-              "t": "2026-06-21T16:31:40",
-              "lat": 56.3424,
-              "lon": 19.34881
-            }
-          ],
-          "missed_model_pulls": 0
-        },
         "fcoo_dk": {
           "display_name": "FCOO DK (coarse)",
           "color": "#FF8C42",
@@ -253,7 +235,25 @@
               "lon": 19.34881
             }
           ],
-          "missed_model_pulls": 0
+          "missed_model_pulls": 1
+        },
+        "fcoo_idk": {
+          "display_name": "FCOO IDK (600 m)",
+          "color": "#98D8C8",
+          "predicted_now": null,
+          "next_surfacing_time": "2026-06-26T05:01:54.361197",
+          "next_surfacing_position": {
+            "lat": 56.3424,
+            "lon": 19.34881
+          },
+          "trajectory_history": [
+            {
+              "t": "2026-06-21T16:31:40",
+              "lat": 56.3424,
+              "lon": 19.34881
+            }
+          ],
+          "missed_model_pulls": 1
         },
         "cmems": {
           "display_name": "CMEMS Baltic",
@@ -271,7 +271,7 @@
               "lon": 19.34881
             }
           ],
-          "missed_model_pulls": 0
+          "missed_model_pulls": 1
         }
       }
     },
@@ -292,24 +292,6 @@
         "ascent_speed_ms": 0.07146130453730579
       },
       "models": {
-        "fcoo_idk": {
-          "display_name": "FCOO IDK (600 m)",
-          "color": "#98D8C8",
-          "predicted_now": null,
-          "next_surfacing_time": "2026-06-28T15:05:56.382700",
-          "next_surfacing_position": {
-            "lat": 59.10494,
-            "lon": 20.86742
-          },
-          "trajectory_history": [
-            {
-              "t": "2026-06-16T19:17:37",
-              "lat": 59.10494,
-              "lon": 20.86742
-            }
-          ],
-          "missed_model_pulls": 0
-        },
         "fcoo_dk": {
           "display_name": "FCOO DK (coarse)",
           "color": "#FF8C42",
@@ -326,7 +308,25 @@
               "lon": 20.86742
             }
           ],
-          "missed_model_pulls": 0
+          "missed_model_pulls": 1
+        },
+        "fcoo_idk": {
+          "display_name": "FCOO IDK (600 m)",
+          "color": "#98D8C8",
+          "predicted_now": null,
+          "next_surfacing_time": "2026-06-28T15:05:56.382700",
+          "next_surfacing_position": {
+            "lat": 59.10494,
+            "lon": 20.86742
+          },
+          "trajectory_history": [
+            {
+              "t": "2026-06-16T19:17:37",
+              "lat": 59.10494,
+              "lon": 20.86742
+            }
+          ],
+          "missed_model_pulls": 1
         },
         "cmems": {
           "display_name": "CMEMS Baltic",
@@ -344,7 +344,7 @@
               "lon": 20.86742
             }
           ],
-          "missed_model_pulls": 0
+          "missed_model_pulls": 1
         }
       }
     },
@@ -365,24 +365,6 @@
         "ascent_speed_ms": 0.0604276966197291
       },
       "models": {
-        "fcoo_idk": {
-          "display_name": "FCOO IDK (600 m)",
-          "color": "#98D8C8",
-          "predicted_now": null,
-          "next_surfacing_time": "2026-06-26T04:52:37.051458",
-          "next_surfacing_position": {
-            "lat": 55.22632,
-            "lon": 15.38997
-          },
-          "trajectory_history": [
-            {
-              "t": "2026-06-24T17:07:00",
-              "lat": 55.22632,
-              "lon": 15.38997
-            }
-          ],
-          "missed_model_pulls": 0
-        },
         "fcoo_dk": {
           "display_name": "FCOO DK (coarse)",
           "color": "#FF8C42",
@@ -399,7 +381,25 @@
               "lon": 15.38997
             }
           ],
-          "missed_model_pulls": 0
+          "missed_model_pulls": 1
+        },
+        "fcoo_idk": {
+          "display_name": "FCOO IDK (600 m)",
+          "color": "#98D8C8",
+          "predicted_now": null,
+          "next_surfacing_time": "2026-06-26T04:52:37.051458",
+          "next_surfacing_position": {
+            "lat": 55.22632,
+            "lon": 15.38997
+          },
+          "trajectory_history": [
+            {
+              "t": "2026-06-24T17:07:00",
+              "lat": 55.22632,
+              "lon": 15.38997
+            }
+          ],
+          "missed_model_pulls": 1
         },
         "cmems": {
           "display_name": "CMEMS Baltic",
@@ -417,7 +417,7 @@
               "lon": 15.38997
             }
           ],
-          "missed_model_pulls": 0
+          "missed_model_pulls": 1
         }
       }
     },
@@ -438,24 +438,6 @@
         "ascent_speed_ms": 0.06544467228422592
       },
       "models": {
-        "fcoo_idk": {
-          "display_name": "FCOO IDK (600 m)",
-          "color": "#98D8C8",
-          "predicted_now": null,
-          "next_surfacing_time": "2026-06-26T16:05:28.204196",
-          "next_surfacing_position": {
-            "lat": 54.68263,
-            "lon": 15.21536
-          },
-          "trajectory_history": [
-            {
-              "t": "2026-06-24T22:11:00",
-              "lat": 54.68263,
-              "lon": 15.21536
-            }
-          ],
-          "missed_model_pulls": 0
-        },
         "fcoo_dk": {
           "display_name": "FCOO DK (coarse)",
           "color": "#FF8C42",
@@ -472,7 +454,25 @@
               "lon": 15.21536
             }
           ],
-          "missed_model_pulls": 0
+          "missed_model_pulls": 1
+        },
+        "fcoo_idk": {
+          "display_name": "FCOO IDK (600 m)",
+          "color": "#98D8C8",
+          "predicted_now": null,
+          "next_surfacing_time": "2026-06-26T16:05:28.204196",
+          "next_surfacing_position": {
+            "lat": 54.68263,
+            "lon": 15.21536
+          },
+          "trajectory_history": [
+            {
+              "t": "2026-06-24T22:11:00",
+              "lat": 54.68263,
+              "lon": 15.21536
+            }
+          ],
+          "missed_model_pulls": 1
         },
         "cmems": {
           "display_name": "CMEMS Baltic",
@@ -490,7 +490,7 @@
               "lon": 15.21536
             }
           ],
-          "missed_model_pulls": 0
+          "missed_model_pulls": 1
         }
       }
     }
