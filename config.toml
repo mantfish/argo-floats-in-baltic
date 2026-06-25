@@ -15,7 +15,7 @@ fcoo_cache_dir = "data/fcoo_cache"
 
 [cmems]
 dataset_id  = "cmems_mod_bal_phy_anfc_PT1H-i"
-max_depth_m = 200.0
+max_depth_m = 10.0
 
 [fcoo]
 url_template = "https://data.fcoo.dk/webmap/v2/data/FCOO/GETM/dk_nested.velocities.Z3D_{dt}.nc"

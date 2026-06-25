@@ -119,7 +119,7 @@ def _extend_trajectories(floats_db: dict[str, FloatRow]) -> None:
     """
     now        = datetime.utcnow()
     fetch_start = now - timedelta(days=1)   # 1-day lookback so no float is gapped
-    fetch_end   = now + timedelta(days=7)   # one full max-cycle horizon
+    fetch_end   = now + timedelta(days=5)   # one full max-cycle horizon
 
     for model in MODELS:
         try:
@@ -153,17 +153,24 @@ def _extend_trajectories(floats_db: dict[str, FloatRow]) -> None:
             tip_time, tip_lat, tip_lon = track.trajectory[-1]
             anchor_time, anchor_lat, anchor_lon = track.trajectory[0]
 
-            new_points = simulate.simulate_cycle(
-                model_data=model_data,
-                control_action=row.cycle_action,
-                anchor_lat=anchor_lat,
-                anchor_lon=anchor_lon,
-                anchor_time=anchor_time,
-                tip_lat=tip_lat,
-                tip_lon=tip_lon,
-                tip_time=tip_time,
-                until_time=_last_timestamp(model_data),
-            )
+            try:
+                new_points = simulate.simulate_cycle(
+                    model_data=model_data,
+                    control_action=row.cycle_action,
+                    anchor_lat=anchor_lat,
+                    anchor_lon=anchor_lon,
+                    anchor_time=anchor_time,
+                    tip_lat=tip_lat,
+                    tip_lon=tip_lon,
+                    tip_time=tip_time,
+                    until_time=_last_timestamp(model_data),
+                )
+            except Exception:
+                logger.warning(
+                    "simulate_cycle failed for float %s model %s -- skipping this float",
+                    row.float_id, model, exc_info=True,
+                )
+                continue
             track.trajectory.extend(new_points)
 
 

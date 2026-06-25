@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-06-25T10:12:08.484569",
+  "updated_at": "2026-06-25T11:40:00.643214",
   "floats": [
     {
       "float_id": "1902766",
@@ -30,9 +30,9 @@
           "trajectory_history": [],
           "missed_model_pulls": 2
         },
-        "fcoo_idk": {
-          "display_name": "FCOO IDK (600 m)",
-          "color": "#98D8C8",
+        "fcoo_dk": {
+          "display_name": "FCOO DK (coarse)",
+          "color": "#FF8C42",
           "predicted_now": null,
           "next_surfacing_time": "2026-06-25T14:09:24.229726",
           "next_surfacing_position": {
@@ -42,9 +42,9 @@
           "trajectory_history": [],
           "missed_model_pulls": 2
         },
-        "fcoo_dk": {
-          "display_name": "FCOO DK (coarse)",
-          "color": "#FF8C42",
+        "fcoo_idk": {
+          "display_name": "FCOO IDK (600 m)",
+          "color": "#98D8C8",
           "predicted_now": null,
           "next_surfacing_time": "2026-06-25T14:09:24.229726",
           "next_surfacing_position": {
@@ -91,9 +91,9 @@
           ],
           "missed_model_pulls": 2
         },
-        "fcoo_idk": {
-          "display_name": "FCOO IDK (600 m)",
-          "color": "#98D8C8",
+        "fcoo_dk": {
+          "display_name": "FCOO DK (coarse)",
+          "color": "#FF8C42",
           "predicted_now": null,
           "next_surfacing_time": "2026-06-26T06:58:24.537790",
           "next_surfacing_position": {
@@ -109,9 +109,9 @@
           ],
           "missed_model_pulls": 2
         },
-        "fcoo_dk": {
-          "display_name": "FCOO DK (coarse)",
-          "color": "#FF8C42",
+        "fcoo_idk": {
+          "display_name": "FCOO IDK (600 m)",
+          "color": "#98D8C8",
           "predicted_now": null,
           "next_surfacing_time": "2026-06-26T06:58:24.537790",
           "next_surfacing_position": {
@@ -164,9 +164,9 @@
           ],
           "missed_model_pulls": 3
         },
-        "fcoo_idk": {
-          "display_name": "FCOO IDK (600 m)",
-          "color": "#98D8C8",
+        "fcoo_dk": {
+          "display_name": "FCOO DK (coarse)",
+          "color": "#FF8C42",
           "predicted_now": null,
           "next_surfacing_time": "2026-06-26T00:11:27.065915",
           "next_surfacing_position": {
@@ -182,9 +182,9 @@
           ],
           "missed_model_pulls": 3
         },
-        "fcoo_dk": {
-          "display_name": "FCOO DK (coarse)",
-          "color": "#FF8C42",
+        "fcoo_idk": {
+          "display_name": "FCOO IDK (600 m)",
+          "color": "#98D8C8",
           "predicted_now": null,
           "next_surfacing_time": "2026-06-26T00:11:27.065915",
           "next_surfacing_position": {
@@ -237,9 +237,9 @@
           ],
           "missed_model_pulls": 2
         },
-        "fcoo_idk": {
-          "display_name": "FCOO IDK (600 m)",
-          "color": "#98D8C8",
+        "fcoo_dk": {
+          "display_name": "FCOO DK (coarse)",
+          "color": "#FF8C42",
           "predicted_now": null,
           "next_surfacing_time": "2026-06-26T05:01:54.361197",
           "next_surfacing_position": {
@@ -255,9 +255,9 @@
           ],
           "missed_model_pulls": 2
         },
-        "fcoo_dk": {
-          "display_name": "FCOO DK (coarse)",
-          "color": "#FF8C42",
+        "fcoo_idk": {
+          "display_name": "FCOO IDK (600 m)",
+          "color": "#98D8C8",
           "predicted_now": null,
           "next_surfacing_time": "2026-06-26T05:01:54.361197",
           "next_surfacing_position": {
@@ -310,9 +310,9 @@
           ],
           "missed_model_pulls": 2
         },
-        "fcoo_idk": {
-          "display_name": "FCOO IDK (600 m)",
-          "color": "#98D8C8",
+        "fcoo_dk": {
+          "display_name": "FCOO DK (coarse)",
+          "color": "#FF8C42",
           "predicted_now": null,
           "next_surfacing_time": "2026-06-28T15:05:56.382700",
           "next_surfacing_position": {
@@ -328,9 +328,9 @@
           ],
           "missed_model_pulls": 2
         },
-        "fcoo_dk": {
-          "display_name": "FCOO DK (coarse)",
-          "color": "#FF8C42",
+        "fcoo_idk": {
+          "display_name": "FCOO IDK (600 m)",
+          "color": "#98D8C8",
           "predicted_now": null,
           "next_surfacing_time": "2026-06-28T15:05:56.382700",
           "next_surfacing_position": {
@@ -383,9 +383,9 @@
           ],
           "missed_model_pulls": 2
         },
-        "fcoo_idk": {
-          "display_name": "FCOO IDK (600 m)",
-          "color": "#98D8C8",
+        "fcoo_dk": {
+          "display_name": "FCOO DK (coarse)",
+          "color": "#FF8C42",
           "predicted_now": null,
           "next_surfacing_time": "2026-06-26T04:52:37.051458",
           "next_surfacing_position": {
@@ -401,9 +401,9 @@
           ],
           "missed_model_pulls": 2
         },
-        "fcoo_dk": {
-          "display_name": "FCOO DK (coarse)",
-          "color": "#FF8C42",
+        "fcoo_idk": {
+          "display_name": "FCOO IDK (600 m)",
+          "color": "#98D8C8",
           "predicted_now": null,
           "next_surfacing_time": "2026-06-26T04:52:37.051458",
           "next_surfacing_position": {
@@ -456,9 +456,9 @@
           ],
           "missed_model_pulls": 2
         },
-        "fcoo_idk": {
-          "display_name": "FCOO IDK (600 m)",
-          "color": "#98D8C8",
+        "fcoo_dk": {
+          "display_name": "FCOO DK (coarse)",
+          "color": "#FF8C42",
           "predicted_now": null,
           "next_surfacing_time": "2026-06-26T16:05:28.204196",
           "next_surfacing_position": {
@@ -474,9 +474,9 @@
           ],
           "missed_model_pulls": 2
         },
-        "fcoo_dk": {
-          "display_name": "FCOO DK (coarse)",
-          "color": "#FF8C42",
+        "fcoo_idk": {
+          "display_name": "FCOO IDK (600 m)",
+          "color": "#98D8C8",
           "predicted_now": null,
           "next_surfacing_time": "2026-06-26T16:05:28.204196",
           "next_surfacing_position": {

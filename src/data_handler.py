@@ -161,11 +161,12 @@ def _fetch_cmems(
         ds = ds.rename(rename) if rename else ds
 
         # Force into a plain in-memory Dataset (no file handles) before the
-        # temp directory is deleted.
+        # temp directory is deleted.  copy=False avoids a ~2 GB transient
+        # duplicate since CMEMS already stores uo/vo as float32.
         return xr.Dataset(
             {
-                "u": (["time", "depth", "lat", "lon"], ds["u"].values.astype(np.float32)),
-                "v": (["time", "depth", "lat", "lon"], ds["v"].values.astype(np.float32)),
+                "u": (["time", "depth", "lat", "lon"], ds["u"].values.astype(np.float32, copy=False)),
+                "v": (["time", "depth", "lat", "lon"], ds["v"].values.astype(np.float32, copy=False)),
             },
             coords={
                 "time":  ds["time"].values,
