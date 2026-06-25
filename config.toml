@@ -1,0 +1,21 @@
+[region]
+lat_min = 53.5
+lat_max  = 60.0
+lon_min  = 9.0
+lon_max  = 23.0
+
+[thresholds]
+dead_after_missed_pulls = 5   # consecutive Argo-feed absences before a float is marked dead
+overdue_days            = 10.0 # no real surfacing in this long -> excluded from error scoring
+
+[paths]
+store_dir      = "data/store"
+argo_cache_dir = "data/argo_cache"
+fcoo_cache_dir = "data/fcoo_cache"
+
+[cmems]
+dataset_id  = "cmems_mod_bal_phy_anfc_PT1H-i"
+max_depth_m = 200.0
+
+[fcoo]
+url_template = "https://data.fcoo.dk/webmap/v2/data/FCOO/GETM/dk_nested.velocities.Z3D_{dt}.nc"

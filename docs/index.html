@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Argo Float Leaderboard — Baltic Sea</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display+SC:wght@400;700&family=IBM+Plex+Sans:wght@300;400;500&family=IBM+Plex+Mono:wght@300;400&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg-0:      #060E1C;
+    --bg-1:      #0B1729;
+    --bg-2:      #112038;
+    --bg-3:      #182D4E;
+    --border:    rgba(0,180,220,0.15);
+    --border-hi: rgba(0,212,255,0.35);
+    --text-0:    #E8F6FA;
+    --text-1:    #8BBCCC;
+    --text-2:    #4A7A9B;
+    --cmems:     #00D4FF;
+    --fcoo-dk:   #FF8C42;
+    --fcoo-idk:  #98D8C8;
+    --good:      #52B788;
+    --font-serif: 'Playfair Display SC', Georgia, serif;
+    --font-sans:  'IBM Plex Sans', system-ui, sans-serif;
+    --font-mono:  'IBM Plex Mono', 'Courier New', monospace;
+  }
+
+  html, body {
+    background: var(--bg-0);
+    color: var(--text-0);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    min-height: 100vh;
+  }
+
+  /* Subtle graticule grid on body */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(var(--border) 1px, transparent 1px),
+      linear-gradient(90deg, var(--border) 1px, transparent 1px);
+    background-size: 48px 48px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .page { position: relative; z-index: 1; max-width: 1100px; margin: 0 auto; padding: 0 24px 80px; }
+
+  /* ── Header ── */
+  header {
+    border-bottom: 1px solid var(--border-hi);
+    padding: 36px 0 28px;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  .header-left {}
+  .site-eyebrow {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    color: var(--text-2);
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  h1 {
+    font-family: var(--font-serif);
+    font-size: clamp(22px, 4vw, 36px);
+    font-weight: 700;
+    color: var(--text-0);
+    letter-spacing: 0.02em;
+    line-height: 1.1;
+  }
+  .subtitle {
+    font-size: 12px;
+    color: var(--text-2);
+    font-family: var(--font-mono);
+    margin-top: 6px;
+    letter-spacing: 0.05em;
+  }
+  .updated-at {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-2);
+    margin-top: 4px;
+    letter-spacing: 0.04em;
+  }
+  .nav-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px;
+    border: 1px solid var(--border-hi);
+    color: var(--cmems);
+    text-decoration: none;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    transition: background 0.15s, color 0.15s;
+    white-space: nowrap;
+  }
+  .nav-link:hover { background: rgba(0,212,255,0.08); color: #fff; }
+  .nav-link svg { flex-shrink: 0; }
+
+  /* ── Section label ── */
+  .section-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    color: var(--text-2);
+    text-transform: uppercase;
+    margin: 40px 0 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* ── Model cards ── */
+  .model-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px;
+  }
+  .model-card {
+    background: var(--bg-1);
+    border: 1px solid var(--border);
+    padding: 20px 24px;
+    position: relative;
+    overflow: hidden;
+    transition: border-color 0.2s;
+  }
+  .model-card::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 3px;
+    background: var(--model-color);
+  }
+  .model-card:hover { border-color: var(--model-color); }
+  .model-card-name {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    color: var(--model-color);
+    text-transform: uppercase;
+    margin-bottom: 16px;
+  }
+  .model-stat-row {
+    display: flex;
+    gap: 32px;
+    flex-wrap: wrap;
+  }
+  .model-stat {}
+  .model-stat-label {
+    font-size: 10px;
+    color: var(--text-2);
+    font-family: var(--font-mono);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+  .model-stat-value {
+    font-family: var(--font-mono);
+    font-size: 26px;
+    font-weight: 300;
+    color: var(--text-0);
+    line-height: 1;
+  }
+  .model-stat-unit {
+    font-size: 11px;
+    color: var(--text-2);
+    margin-left: 3px;
+  }
+  .model-stat-sub {
+    font-size: 10px;
+    color: var(--text-2);
+    font-family: var(--font-mono);
+    margin-top: 4px;
+  }
+  .model-badge {
+    display: inline-block;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    padding: 2px 8px;
+    border: 1px solid var(--border);
+    color: var(--text-2);
+    margin-top: 12px;
+    letter-spacing: 0.06em;
+  }
+
+  /* ── Chart ── */
+  .chart-wrap {
+    background: var(--bg-1);
+    border: 1px solid var(--border);
+    padding: 20px;
+    position: relative;
+  }
+  .chart-title {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-2);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-bottom: 16px;
+  }
+  canvas { display: block; }
+
+  /* ── Events table ── */
+  .events-table-wrap {
+    background: var(--bg-1);
+    border: 1px solid var(--border);
+    overflow: hidden;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--font-mono);
+    font-size: 12px;
+  }
+  thead tr {
+    border-bottom: 1px solid var(--border-hi);
+  }
+  th {
+    text-align: left;
+    padding: 10px 16px;
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    color: var(--text-2);
+    text-transform: uppercase;
+    font-weight: 400;
+  }
+  tbody tr {
+    border-bottom: 1px solid var(--border);
+    transition: background 0.1s;
+  }
+  tbody tr:last-child { border-bottom: none; }
+  tbody tr:hover { background: var(--bg-2); }
+  td {
+    padding: 9px 16px;
+    color: var(--text-1);
+  }
+  td.wmo { color: var(--text-0); font-weight: 400; }
+  td.model-dot {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-0);
+  }
+  td.error-val { color: var(--text-0); }
+  .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .no-data {
+    padding: 32px;
+    text-align: center;
+    color: var(--text-2);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.08em;
+  }
+
+  /* ── Footer ── */
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 24px 0;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-2);
+    letter-spacing: 0.06em;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-top: 60px;
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header>
+    <div class="header-left">
+      <div class="site-eyebrow">Baltic Sea · Argo Profiling Floats</div>
+      <h1>Model Leaderboard</h1>
+      <div class="subtitle" id="subtitle-region"></div>
+      <div class="updated-at" id="updated-at"></div>
+    </div>
+    <a href="map.html" class="nav-link">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6-3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/>
+      </svg>
+      Open Map
+    </a>
+  </header>
+
+  <div class="section-label">Model Performance</div>
+  <div class="model-cards" id="model-cards">
+    <div class="no-data">Loading…</div>
+  </div>
+
+  <div class="section-label">Error Over Time — 30-day rolling window</div>
+  <div class="chart-wrap">
+    <div class="chart-title">Mean position error per scoring event (km)</div>
+    <canvas id="error-chart" height="220"></canvas>
+  </div>
+
+  <div class="section-label">Recent Scoring Events</div>
+  <div class="events-table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Float (WMO)</th>
+          <th>Model</th>
+          <th>Surfacing Time (UTC)</th>
+          <th>Position Error</th>
+        </tr>
+      </thead>
+      <tbody id="events-tbody">
+        <tr><td colspan="4" class="no-data">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <footer>
+    <span>CMEMS Baltic Sea Analysis & Forecast · FCOO GETM DK/IDK · Argo GDAC</span>
+    <a href="map.html" style="color:var(--cmems);text-decoration:none;">→ Float Map</a>
+  </footer>
+</div>
+
+<script>
+const MODEL_COLORS = {
+  cmems:    '#00D4FF',
+  fcoo_dk:  '#FF8C42',
+  fcoo_idk: '#98D8C8',
+};
+
+async function init() {
+  const res = await fetch('data/leaderboard.json');
+  const data = await res.json();
+
+  // Header metadata
+  const d = new Date(data.updated_at);
+  document.getElementById('updated-at').textContent =
+    `Updated ${d.toUTCString().replace(' GMT', ' UTC')}`;
+  document.getElementById('subtitle-region').textContent =
+    'Forecast skill · position error at real surfacings';
+
+  // Model cards
+  const cardsEl = document.getElementById('model-cards');
+  const modelKeys = Object.keys(data.models);
+  if (!modelKeys.length) {
+    cardsEl.innerHTML = '<div class="no-data">No scoring data yet — run again after floats surface.</div>';
+  } else {
+    cardsEl.innerHTML = '';
+    modelKeys.forEach(key => {
+      const m = data.models[key];
+      const color = MODEL_COLORS[key] || '#8BBCCC';
+      const card = document.createElement('div');
+      card.className = 'model-card';
+      card.style.setProperty('--model-color', color);
+
+      const r7 = m.recent_7d;
+      const r30 = m.recent_30d;
+      const trend = (r7.mean_km !== null && r30.mean_km !== null)
+        ? (r7.mean_km < r30.mean_km ? '↓ improving' : '↑ worsening')
+        : '';
+
+      card.innerHTML = `
+        <div class="model-card-name">${m.display_name || key}</div>
+        <div class="model-stat-row">
+          <div class="model-stat">
+            <div class="model-stat-label">Mean Error</div>
+            <div class="model-stat-value">${m.mean_error_km ?? '—'}<span class="model-stat-unit">km</span></div>
+          </div>
+          <div class="model-stat">
+            <div class="model-stat-label">Median Error</div>
+            <div class="model-stat-value">${m.median_error_km ?? '—'}<span class="model-stat-unit">km</span></div>
+          </div>
+          <div class="model-stat">
+            <div class="model-stat-label">7-day mean</div>
+            <div class="model-stat-value">${r7.mean_km ?? '—'}<span class="model-stat-unit">km</span></div>
+          </div>
+        </div>
+        <div class="model-stat-sub" style="margin-top:12px;color:${color}40">
+          ${trend ? trend + ' (recent vs 30d)' : ''}
+        </div>
+        <span class="model-badge">${m.n_total} scoring events</span>
+      `;
+      cardsEl.appendChild(card);
+    });
+  }
+
+  // Chart — bin events by day, per model
+  buildChart(data);
+
+  // Events table
+  const tbody = document.getElementById('events-tbody');
+  if (!data.recent_events.length) {
+    tbody.innerHTML = '<tr><td colspan="4" class="no-data">No scoring events yet.</td></tr>';
+  } else {
+    tbody.innerHTML = data.recent_events.map(ev => {
+      const color = MODEL_COLORS[ev.model] || '#8BBCCC';
+      const dt = new Date(ev.t);
+      const dtStr = dt.toISOString().replace('T', ' ').slice(0, 16) + ' UTC';
+      const modelName = data.models[ev.model]?.display_name || ev.model;
+      return `<tr>
+        <td class="wmo">${ev.float_id}</td>
+        <td><div class="model-dot"><span class="dot" style="background:${color}"></span>${modelName}</div></td>
+        <td>${dtStr}</td>
+        <td class="error-val">${ev.error_km.toFixed(1)} km</td>
+      </tr>`;
+    }).join('');
+  }
+}
+
+function buildChart(data) {
+  const canvas = document.getElementById('error-chart');
+  if (!data.recent_events.length) {
+    canvas.parentElement.innerHTML += '<div class="no-data" style="padding:32px 0">No data yet.</div>';
+    canvas.style.display = 'none';
+    return;
+  }
+
+  // Collect all dates and build per-model daily means
+  const byModelDay = {};
+  const allDays = new Set();
+
+  data.recent_events.forEach(ev => {
+    const day = ev.t.slice(0, 10);
+    allDays.add(day);
+    if (!byModelDay[ev.model]) byModelDay[ev.model] = {};
+    if (!byModelDay[ev.model][day]) byModelDay[ev.model][day] = [];
+    byModelDay[ev.model][day].push(ev.error_km);
+  });
+
+  const days = [...allDays].sort().slice(-30);  // last 30 days
+  const modelKeys = Object.keys(byModelDay);
+
+  const datasets = modelKeys.map(key => {
+    const color = MODEL_COLORS[key] || '#8BBCCC';
+    const modelData = data.models[key] || {};
+    return {
+      label: modelData.display_name || key,
+      data: days.map(day => {
+        const vals = byModelDay[key]?.[day];
+        return vals ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+      }),
+      borderColor: color,
+      backgroundColor: color + '18',
+      borderWidth: 1.5,
+      pointRadius: 2.5,
+      pointBackgroundColor: color,
+      tension: 0.3,
+      spanGaps: true,
+    };
+  });
+
+  new Chart(canvas, {
+    type: 'line',
+    data: { labels: days.map(d => d.slice(5)), datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          labels: {
+            color: '#8BBCCC',
+            font: { family: "'IBM Plex Mono'", size: 11 },
+            boxWidth: 12, boxHeight: 12,
+          },
+        },
+        tooltip: {
+          backgroundColor: '#0E1C33',
+          borderColor: 'rgba(0,212,255,0.3)',
+          borderWidth: 1,
+          titleColor: '#E8F6FA',
+          bodyColor: '#8BBCCC',
+          titleFont: { family: "'IBM Plex Mono'", size: 11 },
+          bodyFont: { family: "'IBM Plex Mono'", size: 11 },
+          callbacks: {
+            label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y?.toFixed(1) ?? '—'} km`,
+          },
+        },
+      },
+      scales: {
+        x: {
+          ticks: { color: '#4A7A9B', font: { family: "'IBM Plex Mono'", size: 10 } },
+          grid: { color: 'rgba(0,180,220,0.08)' },
+        },
+        y: {
+          ticks: {
+            color: '#4A7A9B',
+            font: { family: "'IBM Plex Mono'", size: 10 },
+            callback: v => v + ' km',
+          },
+          grid: { color: 'rgba(0,180,220,0.08)' },
+        },
+      },
+    },
+  });
+  canvas.style.height = '220px';
+}
+
+init().catch(err => {
+  console.error(err);
+  document.body.innerHTML += `<div style="color:#FF8C42;padding:24px;font-family:monospace">Error: ${err.message}</div>`;
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Argo Float Map — Baltic Sea</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display+SC:wght@400;700&family=IBM+Plex+Sans:wght@300;400;500&family=IBM+Plex+Mono:wght@300;400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV/XN/WPeE=" crossorigin=""></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg-0:      #060E1C;
+    --bg-1:      #0B1729;
+    --bg-2:      #112038;
+    --bg-3:      #182D4E;
+    --border:    rgba(0,180,220,0.15);
+    --border-hi: rgba(0,212,255,0.35);
+    --text-0:    #E8F6FA;
+    --text-1:    #8BBCCC;
+    --text-2:    #4A7A9B;
+    --cmems:     #00D4FF;
+    --fcoo-dk:   #FF8C42;
+    --fcoo-idk:  #98D8C8;
+    --font-serif: 'Playfair Display SC', Georgia, serif;
+    --font-sans:  'IBM Plex Sans', system-ui, sans-serif;
+    --font-mono:  'IBM Plex Mono', 'Courier New', monospace;
+    --panel-w:   340px;
+  }
+
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg-0); }
+
+  /* ── Layout ── */
+  #shell { display: flex; flex-direction: column; height: 100vh; }
+
+  /* ── Top bar ── */
+  #topbar {
+    flex-shrink: 0;
+    background: var(--bg-0);
+    border-bottom: 1px solid var(--border-hi);
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    padding: 0 20px;
+    height: 50px;
+    z-index: 1000;
+    position: relative;
+  }
+  .bar-title {
+    font-family: var(--font-serif);
+    font-size: 15px;
+    color: var(--text-0);
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+  }
+  .bar-subtitle {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-2);
+    letter-spacing: 0.1em;
+  }
+  .bar-sep { flex: 1; }
+  .updated-badge {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-2);
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+  }
+  .bar-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border: 1px solid var(--border-hi);
+    color: var(--cmems);
+    text-decoration: none;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    transition: background 0.15s;
+    white-space: nowrap;
+  }
+  .bar-link:hover { background: rgba(0,212,255,0.08); color: #fff; }
+
+  /* ── Map + panel row ── */
+  #body-row { flex: 1; display: flex; min-height: 0; position: relative; }
+
+  /* ── Leaflet map ── */
+  #map { flex: 1; height: 100%; }
+  .leaflet-container { background: var(--bg-0); }
+
+  /* ── Legend ── */
+  #legend {
+    position: absolute;
+    bottom: 28px;
+    left: 16px;
+    z-index: 900;
+    background: rgba(6,14,28,0.92);
+    border: 1px solid var(--border-hi);
+    padding: 12px 16px;
+    backdrop-filter: blur(6px);
+  }
+  .legend-title {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    color: var(--text-2);
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+  .legend-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 6px;
+  }
+  .legend-row:last-child { margin-bottom: 0; }
+  .legend-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .legend-diamond {
+    width: 10px; height: 10px;
+    border: 2px solid;
+    transform: rotate(45deg);
+    flex-shrink: 0;
+    background: transparent;
+  }
+  .legend-line {
+    width: 22px; height: 2px;
+    flex-shrink: 0;
+  }
+  .legend-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-1);
+    letter-spacing: 0.05em;
+  }
+  .legend-divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 8px 0;
+  }
+
+  /* ── Side panel ── */
+  #panel {
+    width: var(--panel-w);
+    min-width: var(--panel-w);
+    background: var(--bg-0);
+    border-left: 1px solid var(--border-hi);
+    overflow-y: auto;
+    transform: translateX(100%);
+    transition: transform 0.22s ease;
+    z-index: 500;
+    position: relative;
+  }
+  #panel.open { transform: translateX(0); }
+
+  .panel-header {
+    position: sticky;
+    top: 0;
+    background: var(--bg-0);
+    border-bottom: 1px solid var(--border);
+    padding: 16px 18px 14px;
+    z-index: 1;
+  }
+  .panel-wmo {
+    font-family: var(--font-serif);
+    font-size: 16px;
+    color: var(--text-0);
+    letter-spacing: 0.04em;
+  }
+  .panel-wmo a {
+    color: inherit;
+    text-decoration: none;
+    border-bottom: 1px solid var(--border-hi);
+    transition: border-color 0.15s;
+  }
+  .panel-wmo a:hover { border-color: var(--cmems); color: var(--cmems); }
+  .panel-close {
+    position: absolute;
+    right: 14px;
+    top: 14px;
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-2);
+    cursor: pointer;
+    width: 26px; height: 26px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px;
+    transition: border-color 0.15s, color 0.15s;
+    font-family: var(--font-mono);
+  }
+  .panel-close:hover { border-color: var(--border-hi); color: var(--text-0); }
+
+  .panel-body { padding: 16px 18px; }
+
+  /* Panel sections */
+  .p-section { margin-bottom: 20px; }
+  .p-section-label {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.18em;
+    color: var(--text-2);
+    text-transform: uppercase;
+    margin-bottom: 8px;
+    padding-bottom: 5px;
+    border-bottom: 1px solid var(--border);
+  }
+  .p-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 5px;
+    gap: 8px;
+  }
+  .p-key {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-2);
+    letter-spacing: 0.06em;
+    flex-shrink: 0;
+  }
+  .p-val {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-0);
+    text-align: right;
+    word-break: break-all;
+  }
+  .p-val.mono-data { font-size: 12px; }
+
+  /* Model sub-sections */
+  .p-model {
+    border: 1px solid var(--border);
+    margin-bottom: 10px;
+    padding: 10px 12px;
+    position: relative;
+    overflow: hidden;
+  }
+  .p-model::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 2px;
+    background: var(--model-color);
+  }
+  .p-model-name {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+    font-weight: 400;
+  }
+
+  /* Scroll bar */
+  #panel::-webkit-scrollbar { width: 4px; }
+  #panel::-webkit-scrollbar-track { background: var(--bg-0); }
+  #panel::-webkit-scrollbar-thumb { background: var(--bg-3); border-radius: 2px; }
+
+  /* Leaflet popup override (not used but prevents flash) */
+  .leaflet-popup { display: none !important; }
+
+  /* Loading overlay */
+  #loading {
+    position: absolute;
+    inset: 0;
+    background: var(--bg-0);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000;
+    flex-direction: column;
+    gap: 12px;
+  }
+  #loading.hidden { display: none; }
+  .load-text {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-2);
+    letter-spacing: 0.12em;
+  }
+  .load-spinner {
+    width: 24px; height: 24px;
+    border: 2px solid var(--border);
+    border-top-color: var(--cmems);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div id="shell">
+
+  <div id="topbar">
+    <div>
+      <div class="bar-title">Argo Float Monitor</div>
+      <div class="bar-subtitle">Baltic Sea · Model Forecast Trajectories</div>
+    </div>
+    <div class="bar-sep"></div>
+    <span class="updated-badge" id="updated-badge"></span>
+    <a href="index.html" class="bar-link">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"/>
+      </svg>
+      Leaderboard
+    </a>
+  </div>
+
+  <div id="body-row">
+    <div id="loading">
+      <div class="load-spinner"></div>
+      <div class="load-text">Fetching float positions…</div>
+    </div>
+
+    <div id="map"></div>
+
+    <div id="legend">
+      <div class="legend-title">Map Key</div>
+      <div class="legend-row">
+        <div class="legend-dot" style="background:#00D4FF"></div>
+        <span class="legend-label">CMEMS Baltic</span>
+      </div>
+      <div class="legend-row">
+        <div class="legend-dot" style="background:#FF8C42"></div>
+        <span class="legend-label">FCOO DK (coarse)</span>
+      </div>
+      <div class="legend-row">
+        <div class="legend-dot" style="background:#98D8C8"></div>
+        <span class="legend-label">FCOO IDK (600 m)</span>
+      </div>
+      <hr class="legend-divider">
+      <div class="legend-row">
+        <div class="legend-dot" style="background:#666;border:1.5px solid #999"></div>
+        <span class="legend-label">Predicted now</span>
+      </div>
+      <div class="legend-row">
+        <div class="legend-diamond" style="border-color:#999"></div>
+        <span class="legend-label">Next surfacing est.</span>
+      </div>
+      <div class="legend-row">
+        <div class="legend-line" style="background:#555"></div>
+        <span class="legend-label">Trajectory history</span>
+      </div>
+    </div>
+
+    <div id="panel">
+      <div class="panel-header">
+        <div class="panel-wmo" id="panel-wmo"></div>
+        <button class="panel-close" id="panel-close" aria-label="Close">✕</button>
+      </div>
+      <div class="panel-body" id="panel-body"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─── Constants ────────────────────────────────────────────────────────────────
+const MODEL_COLORS = {
+  cmems:    '#00D4FF',
+  fcoo_dk:  '#FF8C42',
+  fcoo_idk: '#98D8C8',
+};
+
+// ─── Leaflet setup ────────────────────────────────────────────────────────────
+const map = L.map('map', {
+  center: [56.5, 16.0],
+  zoom: 6,
+  zoomControl: false,
+  attributionControl: true,
+});
+
+L.control.zoom({ position: 'topright' }).addTo(map);
+
+L.tileLayer(
+  'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+  {
+    attribution: '&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
+    subdomains: 'abcd',
+    maxZoom: 19,
+  }
+).addTo(map);
+
+// ─── State ────────────────────────────────────────────────────────────────────
+let activeFloat = null;
+const overlayLayers = [];    // things shown on click (trajectories, surf markers)
+let currentFloatData = null; // full data for the currently selected float
+
+// ─── Panel helpers ────────────────────────────────────────────────────────────
+const panel     = document.getElementById('panel');
+const panelWmo  = document.getElementById('panel-wmo');
+const panelBody = document.getElementById('panel-body');
+
+document.getElementById('panel-close').addEventListener('click', closePanel);
+
+function closePanel() {
+  panel.classList.remove('open');
+  activeFloat = null;
+  clearOverlays();
+}
+
+function clearOverlays() {
+  overlayLayers.forEach(l => map.removeLayer(l));
+  overlayLayers.length = 0;
+}
+
+// ─── Custom marker SVGs ───────────────────────────────────────────────────────
+function circleIcon(color) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14">
+    <circle cx="7" cy="7" r="5" fill="${color}" fill-opacity="0.85" stroke="rgba(255,255,255,0.4)" stroke-width="1.2"/>
+  </svg>`;
+  return L.divIcon({
+    html: svg,
+    className: '',
+    iconSize: [14, 14],
+    iconAnchor: [7, 7],
+    popupAnchor: [0, -10],
+  });
+}
+
+function anchorIcon() {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12">
+    <circle cx="6" cy="6" r="4" fill="none" stroke="#E8F6FA" stroke-width="1.5" stroke-dasharray="2,2"/>
+  </svg>`;
+  return L.divIcon({
+    html: svg,
+    className: '',
+    iconSize: [12, 12],
+    iconAnchor: [6, 6],
+  });
+}
+
+function diamondIcon(color) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14">
+    <rect x="3" y="3" width="8" height="8" rx="0" fill="none" stroke="${color}" stroke-width="1.8" transform="rotate(45 7 7)"/>
+  </svg>`;
+  return L.divIcon({
+    html: svg,
+    className: '',
+    iconSize: [14, 14],
+    iconAnchor: [7, 7],
+  });
+}
+
+// ─── Panel rendering ──────────────────────────────────────────────────────────
+function renderPanel(f) {
+  const ca = f.cycle_action;
+  const lrp = f.last_real_position;
+
+  // WMO header
+  panelWmo.innerHTML = `
+    Float &nbsp;<a href="${f.euro_argo_url}" target="_blank" rel="noopener">${f.float_id}</a>
+  `;
+
+  // Build HTML
+  let html = '';
+
+  // Last real position block
+  html += `
+    <div class="p-section">
+      <div class="p-section-label">Last Confirmed Surfacing</div>
+      <div class="p-row">
+        <span class="p-key">Position</span>
+        <span class="p-val mono-data">${lrp.lat.toFixed(4)}° N, ${lrp.lon.toFixed(4)}° E</span>
+      </div>
+      <div class="p-row">
+        <span class="p-key">Time (UTC)</span>
+        <span class="p-val">${fmtTime(lrp.time)}</span>
+      </div>
+    </div>
+  `;
+
+  // Cycle action block
+  html += `
+    <div class="p-section">
+      <div class="p-section-label">Dive Profile</div>
+      <div class="p-row">
+        <span class="p-key">Mode</span>
+        <span class="p-val">${fmtParkMode(ca.park_mode)}</span>
+      </div>
+      ${ca.target_depth !== null ? `
+      <div class="p-row">
+        <span class="p-key">Depth</span>
+        <span class="p-val mono-data">${ca.target_depth} dbar</span>
+      </div>` : ''}
+      <div class="p-row">
+        <span class="p-key">Submerged</span>
+        <span class="p-val mono-data">${fmtHours(ca.cycle_hours)}</span>
+      </div>
+      <div class="p-row">
+        <span class="p-key">Descent</span>
+        <span class="p-val mono-data">${(ca.descent_speed_ms * 100).toFixed(1)} cm/s</span>
+      </div>
+      <div class="p-row">
+        <span class="p-key">Ascent</span>
+        <span class="p-val mono-data">${(ca.ascent_speed_ms * 100).toFixed(1)} cm/s</span>
+      </div>
+      <div class="p-row">
+        <span class="p-key">Transmission</span>
+        <span class="p-val mono-data">${ca.transmission_duration_minutes.toFixed(0)} min</span>
+      </div>
+    </div>
+  `;
+
+  // Per-model blocks
+  html += `<div class="p-section"><div class="p-section-label">Model Predictions</div>`;
+  for (const [key, m] of Object.entries(f.models)) {
+    const color = MODEL_COLORS[key] || '#8BBCCC';
+    html += `
+      <div class="p-model" style="--model-color:${color}">
+        <div class="p-model-name" style="color:${color}">${m.display_name}</div>
+        ${m.predicted_now ? `
+        <div class="p-row">
+          <span class="p-key">Position now</span>
+          <span class="p-val mono-data">${m.predicted_now.lat.toFixed(4)}°&thinsp;N, ${m.predicted_now.lon.toFixed(4)}°&thinsp;E</span>
+        </div>` : '<div class="p-row"><span class="p-key">Position now</span><span class="p-val">—</span></div>'}
+        <div class="p-row">
+          <span class="p-key">Next surface</span>
+          <span class="p-val">${fmtTime(m.next_surfacing_time)}</span>
+        </div>
+        ${m.next_surfacing_position ? `
+        <div class="p-row">
+          <span class="p-key">Est. position</span>
+          <span class="p-val mono-data">${m.next_surfacing_position.lat.toFixed(4)}°&thinsp;N, ${m.next_surfacing_position.lon.toFixed(4)}°&thinsp;E</span>
+        </div>` : ''}
+        ${m.missed_model_pulls > 0 ? `
+        <div class="p-row">
+          <span class="p-key" style="color:#FF8C42">Stale pulls</span>
+          <span class="p-val" style="color:#FF8C42">${m.missed_model_pulls}</span>
+        </div>` : ''}
+      </div>
+    `;
+  }
+  html += '</div>';
+
+  panelBody.innerHTML = html;
+}
+
+// ─── Draw overlays for a selected float ───────────────────────────────────────
+function drawFloatOverlays(f) {
+  clearOverlays();
+
+  // Last real position marker (dashed circle)
+  const lrp = f.last_real_position;
+  const anchorM = L.marker([lrp.lat, lrp.lon], { icon: anchorIcon(), zIndexOffset: 100 });
+  anchorM.bindTooltip(`Last real position<br>${fmtTime(lrp.time)}`, { className: 'leaflet-tooltip-custom' });
+  anchorM.addTo(map);
+  overlayLayers.push(anchorM);
+
+  // Per-model: trajectory polyline + next surfacing diamond
+  for (const [key, m] of Object.entries(f.models)) {
+    const color = MODEL_COLORS[key] || '#8BBCCC';
+
+    // Trajectory history polyline
+    if (m.trajectory_history.length >= 2) {
+      const latlngs = m.trajectory_history.map(p => [p.lat, p.lon]);
+      const poly = L.polyline(latlngs, {
+        color,
+        weight: 1.5,
+        opacity: 0.6,
+        dashArray: '4 4',
+      });
+      poly.addTo(map);
+      overlayLayers.push(poly);
+    }
+
+    // Next surfacing marker (diamond)
+    if (m.next_surfacing_position) {
+      const sp = m.next_surfacing_position;
+      const surfM = L.marker([sp.lat, sp.lon], { icon: diamondIcon(color), zIndexOffset: 200 });
+      surfM.bindTooltip(
+        `${m.display_name}<br>Next surface: ${fmtTime(m.next_surfacing_time)}<br>${sp.lat.toFixed(4)}° N, ${sp.lon.toFixed(4)}° E`,
+        { className: 'leaflet-tooltip-custom' }
+      );
+      surfM.addTo(map);
+      overlayLayers.push(surfM);
+    }
+  }
+}
+
+// ─── Float click handler ──────────────────────────────────────────────────────
+function onFloatClick(f) {
+  if (activeFloat === f.float_id) {
+    closePanel();
+    return;
+  }
+  activeFloat = f.float_id;
+  renderPanel(f);
+  drawFloatOverlays(f);
+  panel.classList.add('open');
+}
+
+// ─── Formatting helpers ───────────────────────────────────────────────────────
+function fmtTime(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso + (iso.includes('Z') ? '' : 'Z'));
+  return d.toISOString().replace('T', ' ').slice(0, 16) + ' UTC';
+}
+
+function fmtHours(h) {
+  if (h >= 24) return `${(h / 24).toFixed(1)} d`;
+  return `${h.toFixed(1)} h`;
+}
+
+function fmtParkMode(mode) {
+  const map = {
+    park_on_bottom:  'Park on seabed',
+    parking_depth:   'Drift at depth',
+    drift_on_surface: 'Surface drift',
+  };
+  return map[mode] || mode;
+}
+
+// ─── Main data load ───────────────────────────────────────────────────────────
+async function init() {
+  const res = await fetch('data/floats.json');
+  const data = await res.json();
+
+  // Badge
+  const d = new Date(data.updated_at + (data.updated_at.includes('Z') ? '' : 'Z'));
+  document.getElementById('updated-badge').textContent =
+    `Updated ${d.toUTCString().replace(' GMT', ' UTC')}`;
+
+  // Place predicted_now markers (default visible layer)
+  for (const f of data.floats) {
+    for (const [key, m] of Object.entries(f.models)) {
+      if (!m.predicted_now) continue;
+      const color = MODEL_COLORS[key] || '#8BBCCC';
+      const pos   = [m.predicted_now.lat, m.predicted_now.lon];
+      const marker = L.marker(pos, { icon: circleIcon(color), zIndexOffset: 50 });
+      marker.bindTooltip(
+        `Float ${f.float_id}<br>${m.display_name}`,
+        { direction: 'top', offset: [0, -6] }
+      );
+      marker.on('click', () => onFloatClick(f));
+      marker.addTo(map);
+    }
+  }
+
+  document.getElementById('loading').classList.add('hidden');
+}
+
+// Inject tooltip style into the document (Leaflet uses its own class)
+const tooltipStyle = document.createElement('style');
+tooltipStyle.textContent = `
+  .leaflet-tooltip-custom {
+    background: rgba(6,14,28,0.96);
+    border: 1px solid rgba(0,212,255,0.3);
+    color: #8BBCCC;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    padding: 5px 9px;
+    border-radius: 0;
+    box-shadow: none;
+    line-height: 1.5;
+    white-space: nowrap;
+  }
+  .leaflet-tooltip-custom::before { display: none; }
+  .leaflet-tooltip {
+    background: rgba(6,14,28,0.96);
+    border: 1px solid rgba(0,212,255,0.3);
+    color: #8BBCCC;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    padding: 5px 9px;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .leaflet-tooltip::before { display: none !important; }
+  .leaflet-control-zoom a {
+    background: rgba(6,14,28,0.92) !important;
+    color: #8BBCCC !important;
+    border-color: rgba(0,212,255,0.25) !important;
+  }
+  .leaflet-control-zoom a:hover { color: #E8F6FA !important; }
+  .leaflet-control-attribution {
+    background: rgba(6,14,28,0.7) !important;
+    color: #4A7A9B !important;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 9px !important;
+  }
+  .leaflet-control-attribution a { color: #4A7A9B !important; }
+`;
+document.head.appendChild(tooltipStyle);
+
+init().catch(err => {
+  document.getElementById('loading').innerHTML =
+    `<div style="color:#FF8C42;font-family:monospace;font-size:12px;padding:24px">Failed to load float data: ${err.message}</div>`;
+});
+</script>
+</body>
+</html>

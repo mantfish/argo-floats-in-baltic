@@ -1,0 +1,27 @@
+[project]
+name = "model-tracker"
+version = "0.1.0"
+description = "CMEMS/FCOO Argo leaderboard"
+requires-python = ">=3.11"
+dependencies = [
+    "copernicusmarine>=2.0",
+    "argopy>=0.1.14",
+    "xarray>=2024.1",
+    "pandas>=2.0",
+    "numpy>=1.26",
+    "scipy>=1.12",
+    "pyarrow>=14.0",
+    "requests>=2.31",
+    "netcdf4>=1.6",
+    "pydap>=3.4",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+[dependency-groups]
+dev = []

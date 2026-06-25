@@ -1,0 +1,5 @@
+data/fcoo_cache/
+data/argo_cache/
+__pycache__/
+*.pyc
+.venv/
