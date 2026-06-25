@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import logging
 import tomllib
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
@@ -117,9 +117,15 @@ def _extend_trajectories(floats_db: dict[str, FloatRow]) -> None:
     in-memory filter on already-downloaded data, not a second network call,
     so this stays efficient despite the nested loop shape.
     """
+    now        = datetime.utcnow()
+    fetch_start = now - timedelta(days=1)   # 1-day lookback so no float is gapped
+    fetch_end   = now + timedelta(days=7)   # one full max-cycle horizon
+
     for model in MODELS:
         try:
-            raw = data_handler.download_model_data(model, REGION)
+            raw = data_handler.download_model_data(model, REGION,
+                                                   issue_time=fetch_start,
+                                                   end_time=fetch_end)
         except Exception:
             logger.warning(
                 "download_model_data failed for %s -- freezing all rows this round",

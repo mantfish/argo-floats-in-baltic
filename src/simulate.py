@@ -102,12 +102,14 @@ def build_interpolators(model_data: xr.Dataset) -> tuple[Callable, Callable]:
     lat   = model_data["lat"].values.astype(np.float64)
     lon   = model_data["lon"].values.astype(np.float64)
 
-    u_arr = model_data["u"].values.astype(np.float64)  # (time, depth, lat, lon)
-    v_arr = model_data["v"].values.astype(np.float64)
+    # float32 halves the memory vs float64; position errors at km scale
+    # don't require mm/s current precision.
+    u_arr = model_data["u"].values.astype(np.float32)  # (time, depth, lat, lon)
+    v_arr = model_data["v"].values.astype(np.float32)
 
     # Replace NaN (land/mask) with 0 so interpolation doesn't propagate NaNs
-    u_arr = np.where(np.isnan(u_arr), 0.0, u_arr)
-    v_arr = np.where(np.isnan(v_arr), 0.0, v_arr)
+    u_arr = np.where(np.isnan(u_arr), np.float32(0.0), u_arr)
+    v_arr = np.where(np.isnan(v_arr), np.float32(0.0), v_arr)
 
     # Ensure coordinate arrays are strictly monotone (required by RGI)
     if depth[0] > depth[-1]:

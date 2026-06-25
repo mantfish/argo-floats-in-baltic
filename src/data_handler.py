@@ -71,9 +71,14 @@ def download_model_data(
     model: str,
     region: Region,
     issue_time: Optional[datetime] = None,
+    end_time: Optional[datetime] = None,
 ) -> xr.Dataset:
     """
     Pull the latest forecast for `model` over `region`.
+
+    issue_time / end_time: optional start/end window passed to the CMEMS
+    subsetting API to avoid downloading the full archive.  FCOO ignores them
+    (the file on disk already covers a fixed window).
 
     Returns an xr.Dataset with:
         dims : time, depth, lat, lon
@@ -81,7 +86,7 @@ def download_model_data(
     Does NOT trim -- caller must call trim_to_forecast_only() first.
     """
     if model == "cmems":
-        return _fetch_cmems(region, issue_time)
+        return _fetch_cmems(region, issue_time, end_time)
     elif model in _FCOO_SUFFIX:
         return _fetch_fcoo(model, region)
     else:
@@ -96,7 +101,11 @@ def trim_to_forecast_only(model_data: xr.Dataset, issue_time: datetime) -> xr.Da
 
 # -- CMEMS -------------------------------------------------------------------
 
-def _fetch_cmems(region: Region, issue_time: Optional[datetime]) -> xr.Dataset:
+def _fetch_cmems(
+    region: Region,
+    issue_time: Optional[datetime],
+    end_time: Optional[datetime] = None,
+) -> xr.Dataset:
     import copernicusmarine
 
     kwargs: dict = dict(
@@ -111,6 +120,8 @@ def _fetch_cmems(region: Region, issue_time: Optional[datetime]) -> xr.Dataset:
     )
     if issue_time is not None:
         kwargs["start_datetime"] = issue_time.strftime("%Y-%m-%dT%H:%M:%S")
+    if end_time is not None:
+        kwargs["end_datetime"] = end_time.strftime("%Y-%m-%dT%H:%M:%S")
 
     ds = copernicusmarine.open_dataset(**kwargs)
 
@@ -118,7 +129,13 @@ def _fetch_cmems(region: Region, issue_time: Optional[datetime]) -> xr.Dataset:
     for old, new in [("uo", "u"), ("vo", "v"), ("latitude", "lat"), ("longitude", "lon")]:
         if old in ds:
             rename[old] = new
-    return ds.rename(rename) if rename else ds
+    ds = ds.rename(rename) if rename else ds
+
+    # Subsample the spatial grid by 2x to halve the in-memory footprint when
+    # build_interpolators loads .values.  0.054° resolution is still well
+    # within the ~10-20 km position-error scale we're scoring at.
+    ds = ds.isel(lat=slice(None, None, 2), lon=slice(None, None, 2))
+    return ds
 
 
 # -- FCOO --------------------------------------------------------------------
@@ -188,29 +205,66 @@ def _read_fcoo_grid(path: Path, suffix: str, region: Region) -> xr.Dataset:
 
 
 def _get_fcoo_file(cache_dir: Path = FCOO_CACHE_DIR) -> Path:
-    """Return path to the latest FCOO 3-D velocity NetCDF, downloading if needed."""
+    """
+    Return path to the latest FCOO 3-D velocity NetCDF, downloading if needed.
+
+    Retries up to 3 times using HTTP Range headers to resume partial downloads.
+    If all attempts fail, falls back to the most recently cached file so that
+    a transient server hiccup doesn't kill the whole pipeline run.
+    """
     cache_dir = Path(cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
     url      = _get_latest_fcoo_url()
     filename = url.split("/")[-1]
     local    = cache_dir / filename
-    if not local.exists():
-        tmp = local.with_suffix(".nc.tmp")
-        logger.info("Downloading FCOO file: %s", url)
+    if local.exists():
+        return local
+
+    tmp = local.with_suffix(".nc.tmp")
+    last_exc: Exception | None = None
+
+    for attempt in range(3):
         try:
-            r = requests.get(url, timeout=300, stream=True)
+            existing = tmp.stat().st_size if tmp.exists() else 0
+            headers  = {"Range": f"bytes={existing}-"} if existing > 0 else {}
+            if existing:
+                logger.info("Resuming FCOO download at %.1f MB (attempt %d)", existing / 1e6, attempt + 1)
+            else:
+                logger.info("Downloading FCOO file: %s (attempt %d)", url, attempt + 1)
+
+            r = requests.get(url, timeout=300, stream=True, headers=headers)
+            if r.status_code == 416:
+                # Server says range is unsatisfiable -- file complete on server side
+                tmp.rename(local)
+                return local
             r.raise_for_status()
-            bytes_written = 0
-            with open(tmp, "wb") as fh:
+
+            mode = "ab" if existing and r.status_code == 206 else "wb"
+            if mode == "wb" and existing:
+                tmp.unlink()  # server didn't honour Range; start fresh
+
+            bytes_written = existing if mode == "ab" else 0
+            with open(tmp, mode) as fh:
                 for chunk in r.iter_content(1 << 20):
                     fh.write(chunk)
                     bytes_written += len(chunk)
+
             tmp.rename(local)
             logger.info("Saved FCOO file: %s (%.1f MB)", local, bytes_written / 1e6)
-        except Exception:
-            tmp.unlink(missing_ok=True)  # don't leave a partial file
-            raise
-    return local
+            return local
+
+        except Exception as exc:
+            last_exc = exc
+            logger.warning("FCOO download attempt %d failed: %s", attempt + 1, exc)
+
+    # All attempts failed -- fall back to the most recently downloaded cached file.
+    candidates = sorted(cache_dir.glob("dk_nested.velocities.Z3D_*.nc"), key=lambda p: p.stat().st_mtime)
+    tmp.unlink(missing_ok=True)
+    if candidates:
+        fallback = candidates[-1]
+        logger.warning("Using cached fallback FCOO file: %s", fallback.name)
+        return fallback
+    raise RuntimeError(f"FCOO download failed after 3 attempts and no cached fallback exists") from last_exc
 
 
 def _get_latest_fcoo_url() -> str:
