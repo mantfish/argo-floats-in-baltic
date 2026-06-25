@@ -20,10 +20,6 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Set date output
-        id: date
-        run: echo "date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
-
       - name: Install uv
         uses: astral-sh/setup-uv@v3
 
@@ -32,27 +28,11 @@ jobs:
           uv python install 3.12
           uv sync --frozen
 
-      - name: Restore FCOO file cache
-        uses: actions/cache@v4
-        with:
-          path: data/fcoo_cache
-          # Key includes the date so we prefer a same-day file, but fall back
-          # to any previous entry (restore-keys) when today's hasn't downloaded yet.
-          key: fcoo-${{ runner.os }}-${{ steps.date.outputs.date }}
-          restore-keys: fcoo-${{ runner.os }}-
-
       - name: Run pipeline
         env:
           COPERNICUSMARINE_SERVICE_USERNAME: ${{ secrets.COPERNICUSMARINE_USERNAME }}
           COPERNICUSMARINE_SERVICE_PASSWORD: ${{ secrets.COPERNICUSMARINE_PASSWORD }}
         run: uv run main.py
-
-      - name: Save FCOO file cache
-        uses: actions/cache/save@v4
-        if: always()   # save even if pipeline step failed, to keep partial progress
-        with:
-          path: data/fcoo_cache
-          key: fcoo-${{ runner.os }}-${{ steps.date.outputs.date }}
 
       - name: Commit updated state + exported JSON
         run: |
@@ -61,4 +41,5 @@ jobs:
           git add data/store docs/data
           git diff --cached --quiet && echo "No changes to commit" || \
             git commit -m "Update leaderboard $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git pull --rebase origin main
           git push
