@@ -363,6 +363,16 @@
 </div>
 
 <script>
+function _showFatalError(msg) {
+  const el = document.getElementById('loading');
+  if (el) el.innerHTML =
+    `<div style="color:#FF8C42;font-family:monospace;font-size:13px;padding:24px;line-height:1.9;max-width:520px">
+      <b>Map init error</b><br>${msg}<br><br>
+      <span style="color:#8BBCCC">Page: ${location.href}</span>
+    </div>`;
+}
+window.onerror = (msg, src, line) => { _showFatalError(`${msg} (${src}:${line})`); };
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 const MODEL_COLORS = {
   cmems:    '#00D4FF',
