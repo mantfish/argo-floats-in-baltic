@@ -17,6 +17,7 @@ pipeline never needs to know which model it's working with:
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -264,13 +265,26 @@ def _get_fcoo_file(cache_dir: Path = FCOO_CACHE_DIR) -> Path:
         return local
 
     tmp = local.with_suffix(".nc.tmp")
+    # Mimic a desktop browser so institutional servers don't block the request.
+    _BROWSER_UA = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/124.0.0.0 Safari/537.36"
+    )
+
     last_exc: Exception | None = None
 
     for attempt in range(10):
+        if attempt > 0:
+            delay = min(5 * 2 ** (attempt - 1), 120)  # 5 s, 10 s, 20 s … capped at 2 min
+            logger.info("Waiting %d s before retry %d/10…", delay, attempt + 1)
+            time.sleep(delay)
+
         try:
             existing = tmp.stat().st_size if tmp.exists() else 0
-            headers  = {"Range": f"bytes={existing}-"} if existing > 0 else {}
-            if existing:
+            headers: dict[str, str] = {"User-Agent": _BROWSER_UA}
+            if existing > 0:
+                headers["Range"] = f"bytes={existing}-"
                 logger.info("Resuming FCOO download at %.1f MB (attempt %d/10)", existing / 1e6, attempt + 1)
             else:
                 logger.info("Downloading FCOO file: %s (attempt %d/10)", url, attempt + 1)
