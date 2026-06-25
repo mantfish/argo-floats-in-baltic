@@ -1,0 +1,49 @@
+name: Run leaderboard pipeline
+
+on:
+  schedule:
+    - cron: '30 4 * * *'   # ~04:30 UTC -- after the 00Z FCOO run is published
+    - cron: '30 16 * * *'  # ~16:30 UTC -- after the 12Z FCOO run is published
+  workflow_dispatch: {}     # lets you trigger a run manually from the Actions tab
+
+permissions:
+  contents: write   # required so this workflow can commit + push results back
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Install Python + dependencies
+        run: |
+          uv python install 3.12
+          uv sync --frozen
+        # If you're not using a pyproject.toml/uv.lock yet, swap the two lines
+        # above for:
+        #   uses: actions/setup-python@v5
+        #   with: { python-version: '3.12' }
+        # and run: pip install -r requirements.txt
+
+      - name: Run pipeline
+        env:
+          COPERNICUSMARINE_SERVICE_USERNAME: ${{ secrets.COPERNICUSMARINE_USERNAME }}
+          COPERNICUSMARINE_SERVICE_PASSWORD: ${{ secrets.COPERNICUSMARINE_PASSWORD }}
+        run: uv run python -m src.run
+
+      - name: Commit updated state + exported JSON
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/store docs/data
+          git diff --cached --quiet && echo "No changes to commit" || \
+            git commit -m "Update leaderboard $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git push
