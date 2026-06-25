@@ -307,7 +307,7 @@ def _fetch_variable_chunked(
         for attempt in range(max_retries):
             try:
                 raw = var[t_start:t_end + 1, lat0:lat1 + 1, lon0:lon1 + 1]
-                chunks.append(np.array(raw, dtype=np.float32))
+                chunks.append(np.asarray(raw.data).astype(np.float32))
                 logger.debug("  %s t[%d:%d] ok", varname, t_start, t_end)
                 break
             except Exception as exc:
