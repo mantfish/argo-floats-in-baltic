@@ -41,7 +41,7 @@ DESC_CODE = 190
 PARKING_CODE = 290
 ASC_CODE = 590
 
-DRIFT_THRESH_KM = 0.00      # surface drift <= this -> parked_on_bottom
+DRIFT_THRESH_KM = -1.0      # disabled: drift-based parked_on_bottom classification not used (depth-based only)
 DEPTH_FRAC_THRESH = 0.85    # avg_parking_depth / bathy >= this -> parked_on_bottom
 
 # Fallback for a brand-new float with no usable cycle history.
@@ -254,7 +254,14 @@ def action_from_cycle(cyc: dict, next_cyc: dict) -> ControlAction:
             / np.timedelta64(1, "h")
         )
     except Exception:
-        cycle_hours = float((t_next - t_start) / np.timedelta64(1, "h"))
+        # Fallback when depth or ascent speed is unavailable (e.g. drift_on_surface).
+        # Subtract surface transmission time so cycle_hours stays descent+parking only,
+        # matching the ControlAction invariant. Ascent time is omitted (unknown), so
+        # simulate_cycle will slightly overestimate parking duration -- acceptable.
+        cycle_hours = float(
+            (t_next - t_start - np.timedelta64(int(surf_min), "m"))
+            / np.timedelta64(1, "h")
+        )
 
     if cyc.get("parked_on_bottom", False):
         park_mode = "park_on_bottom"

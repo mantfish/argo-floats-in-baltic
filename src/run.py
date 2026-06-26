@@ -161,7 +161,6 @@ def _extend_trajectories(floats_db: dict[str, FloatRow]) -> None:
                 track.missed_model_pulls += 1
                 continue
 
-            track.missed_model_pulls = 0
             tip_time, tip_lat, tip_lon = track.trajectory[-1]
             anchor_time, anchor_lat, anchor_lon = track.trajectory[0]
 
@@ -182,7 +181,9 @@ def _extend_trajectories(floats_db: dict[str, FloatRow]) -> None:
                     "simulate_cycle failed for float %s model %s -- skipping this float",
                     row.float_id, model, exc_info=True,
                 )
+                track.missed_model_pulls += 1
                 continue
+            track.missed_model_pulls = 0
             track.trajectory.extend(new_points)
 
 
@@ -216,10 +217,7 @@ def _reconcile_with_argo(
         real_lat, real_lon = pull.last_position
         real_time = pull.last_time
 
-        # NOTE(Claude): exact tuple equality, matching your original sketch.
-        # Fine if Argo positions are quantized consistently pull-to-pull;
-        # flag if you'd rather key off real_time instead.
-        if (real_lat, real_lon) == row.last_real_position[:2]:
+        if real_time <= row.last_real_position[2]:
             continue  # no new surfacing since last run
 
         # Overdue is judged against THIS ping's timestamp, not wall-clock
@@ -232,7 +230,15 @@ def _reconcile_with_argo(
                 if model not in row.models:
                     continue
                 predicted = _lookup(row.models[model].trajectory, real_time)
-                if predicted is not None:
+                if predicted is None:
+                    traj = row.models[model].trajectory
+                    tip = traj[-1][0].isoformat() if traj else "empty"
+                    logger.warning(
+                        "Float %s model %s: trajectory tip (%s) is before real surfacing (%s)"
+                        " -- scoring event lost; extend model data or reduce freeze gap",
+                        float_id, model, tip, real_time.isoformat(),
+                    )
+                else:
                     error_m = _haversine_error_m(real_lat, real_lon, *predicted)
                     new_rows.append(
                         {"float_id": float_id, "model": model, "t": real_time, "error_m": error_m}
@@ -246,7 +252,9 @@ def _reconcile_with_argo(
             if model not in row.models:
                 continue
             row.models[model].trajectory = [(real_time, real_lat, real_lon)]
-            row.models[model].missed_model_pulls = 0
+            # missed_model_pulls intentionally NOT reset here -- it tracks model-feed
+            # staleness and should only clear when model data actually arrives in
+            # _extend_trajectories, not on a real-float surfacing event.
 
     if new_rows:
         error_db = pd.concat([error_db, pd.DataFrame(new_rows)], ignore_index=True)
@@ -269,7 +277,7 @@ def _register_new_floats(floats_db: dict[str, FloatRow], argo_now: dict[str, Arg
 
 def _build_new_float_row(float_id: str, pull: ArgoPull) -> FloatRow:
     try:
-        rtraj_path = data_handler.download_float_history(float_id)
+        rtraj_path = data_handler.download_float_history(float_id, cache_dir=ARGO_CACHE_DIR)
         cycles = cycle_extractor.extract_cycles(rtraj_path, bathy_interp=_bathy_interp)
     except Exception:
         logger.warning("History download failed for %s, using default action", float_id, exc_info=True)
@@ -338,16 +346,59 @@ def _lookup(trajectory: list[tuple[datetime, float, float]], t: datetime):
     return simulate.lookup_position(trajectory, t)
 
 
-def _bathy_interp(lat: float, lon: float) -> float:
-    """
-    Bathymetric depth (m) at (lat, lon).
+_bathy_interp_fn = None
 
-    MVP: returns a fixed Baltic representative depth of 55 m.
-    This is only used to classify park_on_bottom during cycle extraction
-    (cycle_extractor.DEPTH_FRAC_THRESH = 2.0), so a constant is adequate
-    until a real bathymetry dataset (e.g. GEBCO) is wired up.
+
+def _load_bathy_interp():
     """
-    return 55.0
+    Build a (lat, lon) -> depth_m callable from the EMODnet D6 bathymetry file
+    at STORE_DIR/D6_2024.nc.  Loads once and is cached in _bathy_interp_fn.
+    Falls back to a fixed 55 m if the file is absent.
+    """
+    import numpy as np
+    import xarray as xr
+    from scipy.interpolate import RegularGridInterpolator
+
+    bathy_path = STORE_DIR / "D6_2024.nc"
+    if not bathy_path.exists():
+        logger.warning(
+            "D6 bathymetry not found at %s -- falling back to fixed 55 m "
+            "(park_on_bottom classification will be unreliable)",
+            bathy_path,
+        )
+        return lambda lat, lon: 55.0
+
+    logger.info("Loading EMODnet D6 bathymetry from %s (one-time)", bathy_path)
+    with xr.open_dataset(bathy_path, mask_and_scale=True) as ds:
+        lats = ds["lat"].values.astype(np.float64)
+        lons = ds["lon"].values.astype(np.float64)
+        elev = ds["elevation"].values.astype(np.float32)  # (lat, lon), <0 = ocean
+
+    # Depth in metres: positive for ocean, 55 m sentinel for land / NaN
+    depth = np.where((elev < 0) & ~np.isnan(elev), -elev, np.float32(55.0))
+
+    # RegularGridInterpolator requires strictly monotone coordinate axes
+    if lats[0] > lats[-1]:
+        lats = lats[::-1]
+        depth = depth[::-1, :]
+    if lons[0] > lons[-1]:
+        lons = lons[::-1]
+        depth = depth[:, ::-1]
+
+    interp = RegularGridInterpolator(
+        (lats, lons), depth,
+        method="linear", bounds_error=False, fill_value=55.0,
+    )
+    logger.info("D6 bathymetry ready (%d lat × %d lon)", len(lats), len(lons))
+    return lambda lat, lon: float(interp([[lat, lon]])[0])
+
+
+def _bathy_interp(lat: float, lon: float) -> float:
+    """Bathymetric depth (m) at (lat, lon), from EMODnet D6 bathymetry."""
+    global _bathy_interp_fn
+    if _bathy_interp_fn is None:
+        _bathy_interp_fn = _load_bathy_interp()
+    return _bathy_interp_fn(lat, lon)
 
 
 def _haversine_error_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:

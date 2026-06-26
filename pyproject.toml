@@ -14,6 +14,8 @@ dependencies = [
     "requests>=2.31",
     "netcdf4>=1.6",
     "pydap>=3.4",
+    "ipykernel>=7.3.0",
+    "matplotlib>=3.11.0",
 ]
 
 [build-system]

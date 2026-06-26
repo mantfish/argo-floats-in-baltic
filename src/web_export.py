@@ -23,7 +23,7 @@ from .simulate import lookup_position, next_surfacing
 logger = logging.getLogger(__name__)
 
 DOCS_DATA_DIR = Path(__file__).parent.parent / "docs" / "data"
-HISTORY_DAYS  = 14   # trajectory history window exported to the map
+HISTORY_DAYS  = 30   # trajectory history window exported to the map
 
 
 # Human-readable display names for the model keys
