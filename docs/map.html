@@ -343,6 +343,10 @@
         <span class="legend-label">Last real surfacing</span>
       </div>
       <div class="legend-row">
+        <div class="legend-line" style="background:linear-gradient(to right,#FF3333 55%,transparent 55%);background-size:7px 100%;opacity:0.65"></div>
+        <span class="legend-label">Real surfacing track (click)</span>
+      </div>
+      <div class="legend-row">
         <div class="legend-dot" style="background:#666;border:1.5px solid #999"></div>
         <span class="legend-label">Predicted now</span>
       </div>
@@ -568,6 +572,23 @@ function renderPanel(f) {
 // ─── Draw overlays for a selected float ───────────────────────────────────────
 function drawFloatOverlays(f) {
   clearOverlays();
+
+  // Surfacing history track (real confirmed positions)
+  const hist = f.surfacing_history || [];
+  if (hist.length >= 2) {
+    const latlngs = hist.map(p => [p.lat, p.lon]);
+    const histPoly = L.polyline(latlngs, { color: '#FF3333', weight: 1.5, opacity: 0.5, dashArray: '4 5' });
+    histPoly.addTo(map);
+    overlayLayers.push(histPoly);
+  }
+  for (const p of hist) {
+    const dot = L.circleMarker([p.lat, p.lon], {
+      radius: 3, color: '#FF3333', fillColor: '#FF3333', fillOpacity: 0.6, weight: 1,
+    });
+    dot.bindTooltip(`Real surfacing<br>${fmtTime(p.time)}`, { direction: 'top' });
+    dot.addTo(map);
+    overlayLayers.push(dot);
+  }
 
   // Last real position marker (dashed circle)
   const lrp = f.last_real_position;

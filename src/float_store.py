@@ -40,6 +40,7 @@ class FloatRow:
     missed_pulls: int = 0
     is_dead: bool = False
     models: dict[str, ModelTrack] = field(default_factory=dict)
+    surfacing_history: list[tuple[float, float, datetime]] = field(default_factory=list)  # (lat, lon, time) confirmed real surfacings
 
     def is_overdue(self, now: datetime, threshold_days: float = 10.0) -> bool:
         _, _, last_time = self.last_real_position
@@ -62,9 +63,13 @@ def load_floats_db(store_dir: Path) -> dict[str, FloatRow]:
     if not meta_path.exists():
         return {}
 
-    meta_df = pd.read_parquet(meta_path)
+    meta_df  = pd.read_parquet(meta_path)
     traj_df  = pd.read_parquet(traj_path) if traj_path.exists() else pd.DataFrame(
         columns=["float_id", "model", "t", "lat", "lon"]
+    )
+    surf_path = store_dir / "surfacings.parquet"
+    surf_df   = pd.read_parquet(surf_path) if surf_path.exists() else pd.DataFrame(
+        columns=["float_id", "t", "lat", "lon"]
     )
 
     # Build trajectory lookup: (float_id, model) -> sorted list of (t, lat, lon)
@@ -77,6 +82,16 @@ def load_floats_db(store_dir: Path) -> dict[str, FloatRow]:
                 for _, row in grp.iterrows()
             ]
             traj_lookup[(fid, model)] = pts
+
+    # Build surfacing history lookup: float_id -> sorted list of (lat, lon, t)
+    surf_lookup: dict[str, list] = {}
+    if not surf_df.empty:
+        for fid, grp in surf_df.groupby("float_id"):
+            grp = grp.sort_values("t")
+            surf_lookup[str(fid)] = [
+                (float(r["lat"]), float(r["lon"]), _to_dt(r["t"]))
+                for _, r in grp.iterrows()
+            ]
 
     floats_db: dict[str, FloatRow] = {}
     for _, m in meta_df.iterrows():
@@ -108,6 +123,7 @@ def load_floats_db(store_dir: Path) -> dict[str, FloatRow]:
             missed_pulls=int(m["missed_pulls"]),
             is_dead=bool(m["is_dead"]),
             models=models,
+            surfacing_history=surf_lookup.get(fid, []),
         )
 
     return floats_db
@@ -162,8 +178,14 @@ def save_floats_db(store_dir: Path, floats_db: dict[str, FloatRow]) -> None:
             for t, lat, lon in track.trajectory:
                 traj_rows.append({"float_id": fid, "model": model, "t": t, "lat": lat, "lon": lon})
 
+    surf_rows: list[dict] = []
+    for fid, row in floats_db.items():
+        for lat, lon, t in row.surfacing_history:
+            surf_rows.append({"float_id": fid, "t": t, "lat": lat, "lon": lon})
+
     pd.DataFrame(meta_rows).to_parquet(store_dir / "floats_meta.parquet", index=False)
     pd.DataFrame(traj_rows).to_parquet(store_dir / "trajectories.parquet", index=False)
+    pd.DataFrame(surf_rows).to_parquet(store_dir / "surfacings.parquet", index=False)
 
 
 def save_error_db(store_dir: Path, error_db: pd.DataFrame) -> None:

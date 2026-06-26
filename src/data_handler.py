@@ -143,7 +143,7 @@ def _fetch_cmems(
         maximum_latitude=region.lat_max,
         minimum_longitude=region.lon_min,
         maximum_longitude=region.lon_max,
-        minimum_depth=0.0,
+        minimum_depth=0.52,
         maximum_depth=CMEMS_DEPTH_MAX,
         output_filename="cmems_subset.nc",
     )

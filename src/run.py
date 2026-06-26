@@ -89,6 +89,7 @@ def run(config_path: Path | None = None) -> None:
     floats_db = float_store.load_floats_db(STORE_DIR)
     error_db = float_store.load_error_db(STORE_DIR)
 
+    _backfill_surfacing_history(floats_db)
     _extend_trajectories(floats_db)
 
     argo_now = data_handler.download_argo_floats_in_domain(REGION)
@@ -239,6 +240,7 @@ def _reconcile_with_argo(
         # else: excluded from error_db per the 10-day rule -- still reset
         # below regardless: "if we get a new ping, great, we start from 0 again."
 
+        row.surfacing_history.append((real_lat, real_lon, real_time))
         row.last_real_position = (real_lat, real_lon, real_time)
         for model in MODELS:
             if model not in row.models:
@@ -273,6 +275,11 @@ def _build_new_float_row(float_id: str, pull: ArgoPull) -> FloatRow:
         logger.warning("History download failed for %s, using default action", float_id, exc_info=True)
         cycles = []
 
+    surfacing_history = [
+        (float(c["last_lat"]), float(c["last_lon"]), datetime.fromisoformat(c["end_time"]))
+        for c in cycles
+    ]
+
     if len(cycles) >= 2:
         actions = cycle_extractor.build_actions(cycles)
         cycle_action = cycle_extractor.mode_vote_action(actions)
@@ -290,7 +297,27 @@ def _build_new_float_row(float_id: str, pull: ArgoPull) -> FloatRow:
         missed_pulls=0,
         is_dead=False,
         models={m: ModelTrack(trajectory=[(last_time, last_lat, last_lon)]) for m in MODELS},
+        surfacing_history=surfacing_history,
     )
+
+
+def _backfill_surfacing_history(floats_db: dict[str, FloatRow]) -> None:
+    """One-time backfill for floats loaded from store before surfacing_history was added."""
+    for row in floats_db.values():
+        if row.surfacing_history:
+            continue
+        rtraj_path = ARGO_CACHE_DIR / f"{row.float_id}_Rtraj.nc"
+        if not rtraj_path.exists():
+            continue
+        try:
+            cycles = cycle_extractor.extract_cycles(rtraj_path, bathy_interp=_bathy_interp)
+            row.surfacing_history = [
+                (float(c["last_lat"]), float(c["last_lon"]), datetime.fromisoformat(c["end_time"]))
+                for c in cycles
+            ]
+            logger.info("Backfilled %d surfacings for float %s", len(row.surfacing_history), row.float_id)
+        except Exception:
+            logger.debug("Could not backfill surfacing history for %s", row.float_id, exc_info=True)
 
 
 # --------------------------------------------------------------------------- #

@@ -101,6 +101,10 @@ def export_floats(floats_db: dict[str, FloatRow], now: datetime) -> list[dict]:
                 "lon": round(anchor_lon, 5),
                 "time": anchor_time.isoformat(),
             },
+            "surfacing_history": [
+                {"lat": round(lat, 5), "lon": round(lon, 5), "time": t.isoformat()}
+                for lat, lon, t in row.surfacing_history
+            ],
             "cycle_action": {
                 "park_mode": ca.park_mode,
                 "cycle_hours": ca.cycle_hours,

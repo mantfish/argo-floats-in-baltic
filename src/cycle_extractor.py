@@ -42,7 +42,7 @@ PARKING_CODE = 290
 ASC_CODE = 590
 
 DRIFT_THRESH_KM = 0.00      # surface drift <= this -> parked_on_bottom
-DEPTH_FRAC_THRESH = 2.00    # avg_parking_depth / bathy >= this -> parked_on_bottom
+DEPTH_FRAC_THRESH = 0.85    # avg_parking_depth / bathy >= this -> parked_on_bottom
 
 # Fallback for a brand-new float with no usable cycle history.
 DEFAULT_CYCLE_HOURS = 120.0   # 5 days, descent+parking only (see ControlAction docstring)
@@ -184,6 +184,7 @@ def extract_cycles(rtraj_path: Path, bathy_interp: Callable) -> list[dict]:
 
         depth_based_parked = False
         avg_bottom_depth_dbar = None
+
         if len(pres) > 0:
             avg_bottom_depth_dbar = float(np.mean(pres))
             if not math.isnan(bathy_depth_m) and bathy_depth_m > 0:
