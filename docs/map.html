@@ -4,34 +4,34 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Argo Float Map — Baltic Sea</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Playfair+Display+SC:wght@400;700&family=IBM+Plex+Sans:wght@300;400;500&family=IBM+Plex+Mono:wght@300;400&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   :root {
-    --bg-0:      #060E1C;
-    --bg-1:      #0B1729;
-    --bg-2:      #112038;
-    --bg-3:      #182D4E;
-    --border:    rgba(0,180,220,0.15);
-    --border-hi: rgba(0,212,255,0.35);
-    --text-0:    #E8F6FA;
-    --text-1:    #8BBCCC;
-    --text-2:    #4A7A9B;
-    --cmems:     #00D4FF;
-    --fcoo-dk:   #FF8C42;
-    --fcoo-idk:  #98D8C8;
-    --font-serif: 'Playfair Display SC', Georgia, serif;
-    --font-sans:  'IBM Plex Sans', system-ui, sans-serif;
-    --font-mono:  'IBM Plex Mono', 'Courier New', monospace;
-    --panel-w:   340px;
+    --paper:    #FFFFFF;
+    --paper-2:  #FFFFFF;
+    --chip:     #F1F1ED;
+    --ink-0:    #16160F;
+    --ink-1:    #44443C;
+    --ink-2:    #8C8C82;
+    --line:     rgba(20,20,15,0.10);
+    --line-hi:  rgba(20,20,15,0.20);
+    --blue:     #147D74;
+    --blue-lt:  #3E5C8A;
+    --coral:    #D6422E;
+    --font-sans: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    --panel-w:   360px;
   }
 
-  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg-0); }
+  html, body {
+    width: 100%; height: 100%; overflow: hidden;
+    background: var(--paper);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    font-variant-numeric: tabular-nums;
+  }
 
   /* ── Layout ── */
   #shell { display: flex; flex-direction: column; height: 100vh; }
@@ -39,94 +39,102 @@
   /* ── Top bar ── */
   #topbar {
     flex-shrink: 0;
-    background: var(--bg-0);
-    border-bottom: 1px solid var(--border-hi);
+    background: var(--paper-2);
+    border-bottom: 1px solid var(--line-hi);
     display: flex;
     align-items: center;
     gap: 24px;
-    padding: 0 20px;
-    height: 50px;
+    padding: 0 24px;
+    height: 60px;
     z-index: 1000;
     position: relative;
   }
+  .bar-brand { display: flex; align-items: center; gap: 13px; }
+  .bar-mark { display: flex; align-items: center; gap: 4px; }
+  .bar-mark .d { width: 13px; height: 13px; border-radius: 50%; }
+  .bar-mark .p { width: 9px; height: 20px; border-radius: 999px; }
   .bar-title {
-    font-family: var(--font-serif);
-    font-size: 15px;
-    color: var(--text-0);
-    letter-spacing: 0.04em;
+    font-size: 17px;
+    color: var(--ink-0);
+    letter-spacing: -0.02em;
+    font-weight: 700;
     white-space: nowrap;
   }
   .bar-subtitle {
-    font-family: var(--font-mono);
-    font-size: 10px;
-    color: var(--text-2);
-    letter-spacing: 0.1em;
+    font-size: 11px;
+    color: var(--ink-2);
+    letter-spacing: 0.04em;
+    margin-top: 1px;
   }
   .bar-sep { flex: 1; }
   .updated-badge {
-    font-family: var(--font-mono);
-    font-size: 10px;
-    color: var(--text-2);
-    letter-spacing: 0.06em;
+    font-size: 11px;
+    color: var(--ink-2);
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
     white-space: nowrap;
   }
   .bar-link {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    padding: 6px 14px;
-    border: 1px solid var(--border-hi);
-    color: var(--cmems);
+    gap: 8px;
+    padding: 10px 18px;
+    background: var(--ink-0);
+    border: 1px solid var(--ink-0);
+    color: var(--paper);
     text-decoration: none;
-    font-family: var(--font-mono);
-    font-size: 10px;
-    letter-spacing: 0.1em;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
     text-transform: uppercase;
-    transition: background 0.15s;
+    transition: background 0.15s, border-color 0.15s;
     white-space: nowrap;
+    border-radius: 999px;
   }
-  .bar-link:hover { background: rgba(0,212,255,0.08); color: #fff; }
+  .bar-link:hover { background: var(--blue); border-color: var(--blue); color: #fff; }
 
   /* ── Map + panel row ── */
   #body-row { flex: 1; display: flex; min-height: 0; position: relative; }
 
   /* ── Leaflet map ── */
   #map { flex: 1; height: 100%; }
-  .leaflet-container { background: var(--bg-0); }
+  .leaflet-container { background: #E4E9EE; }
 
   /* ── Legend ── */
   #legend {
     position: absolute;
     bottom: 28px;
-    left: 16px;
+    left: 18px;
     z-index: 900;
-    background: rgba(6,14,28,0.92);
-    border: 1px solid var(--border-hi);
-    padding: 12px 16px;
-    backdrop-filter: blur(6px);
+    background: rgba(255,255,255,0.94);
+    border: 1px solid var(--line-hi);
+    padding: 16px 18px;
+    backdrop-filter: blur(8px);
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(20,20,15,0.08);
   }
   .legend-title {
-    font-family: var(--font-mono);
     font-size: 10px;
     letter-spacing: 0.12em;
-    color: var(--text-2);
+    color: var(--ink-2);
     text-transform: uppercase;
-    margin-bottom: 10px;
+    margin-bottom: 12px;
+    font-weight: 600;
   }
   .legend-row {
     display: flex;
     align-items: center;
-    gap: 10px;
-    margin-bottom: 6px;
+    gap: 11px;
+    margin-bottom: 8px;
   }
   .legend-row:last-child { margin-bottom: 0; }
   .legend-dot {
-    width: 10px; height: 10px;
+    width: 11px; height: 11px;
     border-radius: 50%;
     flex-shrink: 0;
   }
   .legend-diamond {
-    width: 10px; height: 10px;
+    width: 11px; height: 11px;
     border: 2px solid;
     transform: rotate(45deg);
     flex-shrink: 0;
@@ -137,23 +145,22 @@
     flex-shrink: 0;
   }
   .legend-label {
-    font-family: var(--font-mono);
-    font-size: 10px;
-    color: var(--text-1);
-    letter-spacing: 0.05em;
+    font-size: 11px;
+    color: var(--ink-1);
+    letter-spacing: 0.01em;
   }
   .legend-divider {
     border: none;
-    border-top: 1px solid var(--border);
-    margin: 8px 0;
+    border-top: 1px solid var(--line);
+    margin: 11px 0;
   }
 
   /* ── Side panel ── */
   #panel {
     width: var(--panel-w);
     min-width: var(--panel-w);
-    background: var(--bg-0);
-    border-left: 1px solid var(--border-hi);
+    background: var(--paper-2);
+    border-left: 1px solid var(--line-hi);
     overflow-y: auto;
     transform: translateX(100%);
     transition: transform 0.22s ease;
@@ -165,105 +172,100 @@
   .panel-header {
     position: sticky;
     top: 0;
-    background: var(--bg-0);
-    border-bottom: 1px solid var(--border);
-    padding: 16px 18px 14px;
+    background: var(--paper-2);
+    border-bottom: 1px solid var(--line);
+    padding: 22px 22px 18px;
     z-index: 1;
   }
   .panel-wmo {
-    font-family: var(--font-serif);
-    font-size: 16px;
-    color: var(--text-0);
-    letter-spacing: 0.04em;
+    font-size: 22px;
+    color: var(--ink-0);
+    letter-spacing: -0.02em;
+    font-weight: 700;
   }
   .panel-wmo a {
-    color: inherit;
+    color: var(--blue);
     text-decoration: none;
-    border-bottom: 1px solid var(--border-hi);
+    border-bottom: 1px solid transparent;
     transition: border-color 0.15s;
   }
-  .panel-wmo a:hover { border-color: var(--cmems); color: var(--cmems); }
+  .panel-wmo a:hover { border-color: var(--blue); }
   .panel-close {
     position: absolute;
-    right: 14px;
-    top: 14px;
+    right: 18px;
+    top: 18px;
     background: none;
-    border: 1px solid var(--border);
-    color: var(--text-2);
+    border: 1px solid var(--line-hi);
+    color: var(--ink-2);
     cursor: pointer;
-    width: 26px; height: 26px;
+    width: 30px; height: 30px;
     display: flex; align-items: center; justify-content: center;
     font-size: 14px;
-    transition: border-color 0.15s, color 0.15s;
-    font-family: var(--font-mono);
+    transition: border-color 0.15s, color 0.15s, background 0.15s;
+    border-radius: 999px;
   }
-  .panel-close:hover { border-color: var(--border-hi); color: var(--text-0); }
+  .panel-close:hover { border-color: var(--ink-0); color: var(--ink-0); background: var(--paper); }
 
-  .panel-body { padding: 16px 18px; }
+  .panel-body { padding: 20px 22px; }
 
   /* Panel sections */
-  .p-section { margin-bottom: 20px; }
+  .p-section { margin-bottom: 26px; }
   .p-section-label {
-    font-family: var(--font-mono);
-    font-size: 9px;
-    letter-spacing: 0.18em;
-    color: var(--text-2);
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    color: var(--ink-2);
     text-transform: uppercase;
-    margin-bottom: 8px;
-    padding-bottom: 5px;
-    border-bottom: 1px solid var(--border);
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--line);
+    font-weight: 600;
   }
   .p-row {
     display: flex;
     justify-content: space-between;
     align-items: baseline;
-    margin-bottom: 5px;
+    margin-bottom: 8px;
     gap: 8px;
   }
   .p-key {
-    font-family: var(--font-mono);
-    font-size: 10px;
-    color: var(--text-2);
-    letter-spacing: 0.06em;
+    font-size: 12px;
+    color: var(--ink-2);
+    letter-spacing: 0.01em;
     flex-shrink: 0;
   }
   .p-val {
-    font-family: var(--font-mono);
-    font-size: 11px;
-    color: var(--text-0);
+    font-size: 12px;
+    color: var(--ink-0);
     text-align: right;
     word-break: break-all;
+    font-weight: 500;
   }
   .p-val.mono-data { font-size: 12px; }
 
   /* Model sub-sections */
   .p-model {
-    border: 1px solid var(--border);
-    margin-bottom: 10px;
-    padding: 10px 12px;
+    border: 1px solid var(--line);
+    margin-bottom: 12px;
+    padding: 14px 15px;
     position: relative;
     overflow: hidden;
-  }
-  .p-model::before {
-    content: '';
-    position: absolute;
-    left: 0; top: 0; bottom: 0;
-    width: 2px;
-    background: var(--model-color);
+    border-radius: 12px;
   }
   .p-model-name {
-    font-family: var(--font-mono);
-    font-size: 10px;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    margin-bottom: 8px;
-    font-weight: 400;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    letter-spacing: 0.01em;
+    margin-bottom: 12px;
+    font-weight: 600;
   }
+  .p-model-name .swatch { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
 
   /* Scroll bar */
-  #panel::-webkit-scrollbar { width: 4px; }
-  #panel::-webkit-scrollbar-track { background: var(--bg-0); }
-  #panel::-webkit-scrollbar-thumb { background: var(--bg-3); border-radius: 2px; }
+  #panel::-webkit-scrollbar { width: 5px; }
+  #panel::-webkit-scrollbar-track { background: var(--paper-2); }
+  #panel::-webkit-scrollbar-thumb { background: var(--line-hi); border-radius: 3px; }
 
   /* Leaflet popup override (not used but prevents flash) */
   .leaflet-popup { display: none !important; }
@@ -272,25 +274,25 @@
   #loading {
     position: absolute;
     inset: 0;
-    background: var(--bg-0);
+    background: var(--paper);
     display: flex;
     align-items: center;
     justify-content: center;
     z-index: 2000;
     flex-direction: column;
-    gap: 12px;
+    gap: 16px;
   }
   #loading.hidden { display: none; }
   .load-text {
-    font-family: var(--font-mono);
-    font-size: 11px;
-    color: var(--text-2);
-    letter-spacing: 0.12em;
+    font-size: 12px;
+    color: var(--ink-2);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
   }
   .load-spinner {
-    width: 24px; height: 24px;
-    border: 2px solid var(--border);
-    border-top-color: var(--cmems);
+    width: 26px; height: 26px;
+    border: 2px solid var(--line);
+    border-top-color: var(--blue);
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
   }
@@ -301,14 +303,16 @@
 <div id="shell">
 
   <div id="topbar">
-    <div>
-      <div class="bar-title">Argo Float Monitor</div>
-      <div class="bar-subtitle">Baltic Sea · Model Forecast Trajectories</div>
+    <div class="bar-brand">
+      <div>
+        <div class="bar-title">Argo Float Monitor</div>
+        <div class="bar-subtitle">Baltic Sea · Model Forecast Trajectories</div>
+      </div>
     </div>
     <div class="bar-sep"></div>
     <span class="updated-badge" id="updated-badge"></span>
     <a href="index.html" class="bar-link">
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
         <path d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"/>
       </svg>
       Leaderboard
@@ -326,36 +330,32 @@
     <div id="legend">
       <div class="legend-title">Map Key</div>
       <div class="legend-row">
-        <div class="legend-dot" style="background:#00D4FF"></div>
+        <div class="legend-dot" style="background:#147D74"></div>
         <span class="legend-label">CMEMS Baltic</span>
       </div>
       <div class="legend-row">
-        <div class="legend-dot" style="background:#FF8C42"></div>
+        <div class="legend-dot" style="background:#C2872A"></div>
         <span class="legend-label">FCOO DK (coarse)</span>
       </div>
       <div class="legend-row">
-        <div class="legend-dot" style="background:#98D8C8"></div>
+        <div class="legend-dot" style="background:#3E5C8A"></div>
         <span class="legend-label">FCOO IDK (600 m)</span>
       </div>
       <hr class="legend-divider">
       <div class="legend-row">
-        <div class="legend-dot" style="background:#FF3333;border:1.5px solid rgba(255,255,255,0.55)"></div>
+        <div class="legend-dot" style="background:#D6422E;border:1.5px solid rgba(255,255,255,0.9)"></div>
         <span class="legend-label">Last real surfacing</span>
       </div>
       <div class="legend-row">
-        <div class="legend-line" style="background:linear-gradient(to right,#FF3333 55%,transparent 55%);background-size:7px 100%;opacity:0.65"></div>
-        <span class="legend-label">Real surfacing track (click)</span>
+        <div class="legend-line" style="background:linear-gradient(to right,#D6422E 55%,transparent 55%);background-size:7px 100%;opacity:0.85"></div>
+        <span class="legend-label">Real surfacing track</span>
       </div>
       <div class="legend-row">
-        <div class="legend-dot" style="background:#666;border:1.5px solid #999"></div>
-        <span class="legend-label">Predicted now</span>
-      </div>
-      <div class="legend-row">
-        <div class="legend-diamond" style="border-color:#999"></div>
+        <div class="legend-diamond" style="border-color:#8C8C82"></div>
         <span class="legend-label">Next surfacing est.</span>
       </div>
       <div class="legend-row">
-        <div class="legend-line" style="background:#555"></div>
+        <div class="legend-line" style="background:#8C8C82"></div>
         <span class="legend-label">Trajectory history</span>
       </div>
     </div>
@@ -374,18 +374,18 @@
 function _showFatalError(msg) {
   const el = document.getElementById('loading');
   if (el) el.innerHTML =
-    `<div style="color:#FF8C42;font-family:monospace;font-size:13px;padding:24px;line-height:1.9;max-width:520px">
+    `<div style="color:#D6422E;font-family:sans-serif;font-size:13px;padding:24px;line-height:1.9;max-width:520px">
       <b>Map init error</b><br>${msg}<br><br>
-      <span style="color:#8BBCCC">Page: ${location.href}</span>
+      <span style="color:#8C8C82">Page: ${location.href}</span>
     </div>`;
 }
 window.onerror = (msg, src, line) => { _showFatalError(`${msg} (${src}:${line})`); };
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const MODEL_COLORS = {
-  cmems:    '#00D4FF',
-  fcoo_dk:  '#FF8C42',
-  fcoo_idk: '#98D8C8',
+  cmems:    '#147D74',
+  fcoo_dk:  '#C2872A',
+  fcoo_idk: '#3E5C8A',
 };
 
 // ─── Leaflet setup ────────────────────────────────────────────────────────────
@@ -399,7 +399,7 @@ const map = L.map('map', {
 L.control.zoom({ position: 'topright' }).addTo(map);
 
 L.tileLayer(
-  'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+  'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
   {
     attribution: '&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
     subdomains: 'abcd',
@@ -432,40 +432,40 @@ function clearOverlays() {
 
 // ─── Custom marker SVGs ───────────────────────────────────────────────────────
 function circleIcon(color) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16">
+    <circle cx="8" cy="8" r="6" fill="${color}" fill-opacity="0.92" stroke="#fff" stroke-width="1.6"/>
+  </svg>`;
+  return L.divIcon({
+    html: svg,
+    className: '',
+    iconSize: [16, 16],
+    iconAnchor: [8, 8],
+    popupAnchor: [0, -10],
+  });
+}
+
+function realPositionIcon() {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16">
+    <circle cx="8" cy="8" r="6" fill="#D6422E" stroke="#fff" stroke-width="1.8"/>
+  </svg>`;
+  return L.divIcon({ html: svg, className: '', iconSize: [16,16], iconAnchor: [8,8] });
+}
+
+function anchorIcon() {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14">
-    <circle cx="7" cy="7" r="5" fill="${color}" fill-opacity="0.85" stroke="rgba(255,255,255,0.4)" stroke-width="1.2"/>
+    <circle cx="7" cy="7" r="5" fill="none" stroke="#D6422E" stroke-width="1.6" stroke-dasharray="2,2"/>
   </svg>`;
   return L.divIcon({
     html: svg,
     className: '',
     iconSize: [14, 14],
     iconAnchor: [7, 7],
-    popupAnchor: [0, -10],
-  });
-}
-
-function realPositionIcon() {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14">
-    <circle cx="7" cy="7" r="5" fill="#FF3333" fill-opacity="0.9" stroke="rgba(255,255,255,0.55)" stroke-width="1.5"/>
-  </svg>`;
-  return L.divIcon({ html: svg, className: '', iconSize: [14,14], iconAnchor: [7,7] });
-}
-
-function anchorIcon() {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12">
-    <circle cx="6" cy="6" r="4" fill="none" stroke="#E8F6FA" stroke-width="1.5" stroke-dasharray="2,2"/>
-  </svg>`;
-  return L.divIcon({
-    html: svg,
-    className: '',
-    iconSize: [12, 12],
-    iconAnchor: [6, 6],
   });
 }
 
 function diamondIcon(color) {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14">
-    <rect x="3" y="3" width="8" height="8" rx="0" fill="none" stroke="${color}" stroke-width="1.8" transform="rotate(45 7 7)"/>
+    <rect x="3" y="3" width="8" height="8" rx="0" fill="#fff" stroke="${color}" stroke-width="1.8" transform="rotate(45 7 7)"/>
   </svg>`;
   return L.divIcon({
     html: svg,
@@ -538,10 +538,10 @@ function renderPanel(f) {
   // Per-model blocks
   html += `<div class="p-section"><div class="p-section-label">Model Predictions</div>`;
   for (const [key, m] of Object.entries(f.models)) {
-    const color = MODEL_COLORS[key] || '#8BBCCC';
+    const color = MODEL_COLORS[key] || '#8C8C82';
     html += `
       <div class="p-model" style="--model-color:${color}">
-        <div class="p-model-name" style="color:${color}">${m.display_name}</div>
+        <div class="p-model-name" style="color:${color}"><span class="swatch" style="background:${color}"></span>${m.display_name}</div>
         ${m.predicted_now ? `
         <div class="p-row">
           <span class="p-key">Position now</span>
@@ -558,8 +558,8 @@ function renderPanel(f) {
         </div>` : ''}
         ${m.missed_model_pulls > 0 ? `
         <div class="p-row">
-          <span class="p-key" style="color:#FF8C42">Stale pulls</span>
-          <span class="p-val" style="color:#FF8C42">${m.missed_model_pulls}</span>
+          <span class="p-key" style="color:#D6422E">Stale pulls</span>
+          <span class="p-val" style="color:#D6422E">${m.missed_model_pulls}</span>
         </div>` : ''}
       </div>
     `;
@@ -577,13 +577,13 @@ function drawFloatOverlays(f) {
   const hist = f.surfacing_history || [];
   if (hist.length >= 2) {
     const latlngs = hist.map(p => [p.lat, p.lon]);
-    const histPoly = L.polyline(latlngs, { color: '#FF3333', weight: 1.5, opacity: 0.5, dashArray: '4 5' });
+    const histPoly = L.polyline(latlngs, { color: '#D6422E', weight: 1.6, opacity: 0.7, dashArray: '4 5' });
     histPoly.addTo(map);
     overlayLayers.push(histPoly);
   }
   for (const p of hist) {
     const dot = L.circleMarker([p.lat, p.lon], {
-      radius: 3, color: '#FF3333', fillColor: '#FF3333', fillOpacity: 0.6, weight: 1,
+      radius: 3.5, color: '#D6422E', fillColor: '#D6422E', fillOpacity: 0.7, weight: 1,
     });
     dot.bindTooltip(`Real surfacing<br>${fmtTime(p.time)}`, { direction: 'top' });
     dot.addTo(map);
@@ -599,15 +599,15 @@ function drawFloatOverlays(f) {
 
   // Per-model: trajectory polyline + next surfacing diamond
   for (const [key, m] of Object.entries(f.models)) {
-    const color = MODEL_COLORS[key] || '#8BBCCC';
+    const color = MODEL_COLORS[key] || '#8C8C82';
 
     // Trajectory history polyline
     if (m.trajectory_history.length >= 2) {
       const latlngs = m.trajectory_history.map(p => [p.lat, p.lon]);
       const poly = L.polyline(latlngs, {
         color,
-        weight: 1.5,
-        opacity: 0.6,
+        weight: 2,
+        opacity: 0.7,
         dashArray: '4 4',
       });
       poly.addTo(map);
@@ -682,7 +682,7 @@ async function init() {
 
   // Place markers (default visible layer)
   for (const f of data.floats) {
-    // Last real surfacing position — red dot
+    // Last real surfacing position — ink dot
     const lrp = f.last_real_position;
     const lrpM = L.marker([lrp.lat, lrp.lon], { icon: realPositionIcon(), zIndexOffset: 80 });
     lrpM.bindTooltip(
@@ -695,7 +695,7 @@ async function init() {
     // Model predicted-now markers
     for (const [key, m] of Object.entries(f.models)) {
       if (!m.predicted_now) continue;
-      const color = MODEL_COLORS[key] || '#8BBCCC';
+      const color = MODEL_COLORS[key] || '#8C8C82';
       const pos   = [m.predicted_now.lat, m.predicted_now.lon];
       const marker = L.marker(pos, { icon: circleIcon(color), zIndexOffset: 50 });
       marker.bindTooltip(
@@ -714,53 +714,54 @@ async function init() {
 const tooltipStyle = document.createElement('style');
 tooltipStyle.textContent = `
   .leaflet-tooltip-custom {
-    background: rgba(6,14,28,0.96);
-    border: 1px solid rgba(0,212,255,0.3);
-    color: #8BBCCC;
-    font-family: 'IBM Plex Mono', monospace;
+    background: #16160F;
+    border: none;
+    color: #FFFFFF;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
     font-size: 11px;
-    padding: 5px 9px;
-    border-radius: 0;
-    box-shadow: none;
+    padding: 7px 11px;
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(20,20,15,0.18);
     line-height: 1.5;
     white-space: nowrap;
   }
   .leaflet-tooltip-custom::before { display: none; }
   .leaflet-tooltip {
-    background: rgba(6,14,28,0.96);
-    border: 1px solid rgba(0,212,255,0.3);
-    color: #8BBCCC;
-    font-family: 'IBM Plex Mono', monospace;
+    background: #16160F;
+    border: none;
+    color: #FFFFFF;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
     font-size: 11px;
-    padding: 5px 9px;
-    border-radius: 0;
-    box-shadow: none;
+    padding: 7px 11px;
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(20,20,15,0.18);
   }
   .leaflet-tooltip::before { display: none !important; }
+  .leaflet-control-zoom { border: none !important; box-shadow: 0 2px 10px rgba(20,20,15,0.12) !important; border-radius: 10px !important; overflow: hidden; }
   .leaflet-control-zoom a {
-    background: rgba(6,14,28,0.92) !important;
-    color: #8BBCCC !important;
-    border-color: rgba(0,212,255,0.25) !important;
+    background: #FFFFFF !important;
+    color: #44443C !important;
+    border-color: rgba(20,20,15,0.10) !important;
   }
-  .leaflet-control-zoom a:hover { color: #E8F6FA !important; }
+  .leaflet-control-zoom a:hover { color: #147D74 !important; background: #F2F1EC !important; }
   .leaflet-control-attribution {
-    background: rgba(6,14,28,0.7) !important;
-    color: #4A7A9B !important;
-    font-family: 'IBM Plex Mono', monospace;
+    background: rgba(255,255,255,0.78) !important;
+    color: #8C8C82 !important;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
     font-size: 9px !important;
   }
-  .leaflet-control-attribution a { color: #4A7A9B !important; }
+  .leaflet-control-attribution a { color: #147D74 !important; }
 `;
 document.head.appendChild(tooltipStyle);
 
 init().catch(err => {
   const dataUrl = new URL('data/floats.json', window.location.href).href;
   document.getElementById('loading').innerHTML =
-    `<div style="color:#FF8C42;font-family:monospace;font-size:13px;padding:24px;line-height:1.8">
+    `<div style="color:#D6422E;font-family:sans-serif;font-size:13px;padding:24px;line-height:1.8">
       <b>Failed to load float data</b><br>
       ${err.name}: ${err.message}<br><br>
-      <span style="color:#8BBCCC">Page: ${window.location.href}</span><br>
-      <span style="color:#8BBCCC">Fetching: ${dataUrl}</span>
+      <span style="color:#8C8C82">Page: ${window.location.href}</span><br>
+      <span style="color:#8C8C82">Fetching: ${dataUrl}</span>
     </div>`;
 });
 </script>
