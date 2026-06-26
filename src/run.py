@@ -70,9 +70,7 @@ def _build_globals(cfg: dict) -> None:
     # Push data_handler constants that live in config
     data_handler.CMEMS_DATASET_ID = cfg["cmems"]["dataset_id"]
     data_handler.CMEMS_DEPTH_MAX  = cfg["cmems"]["max_depth_m"]
-    data_handler.FCOO_3D_URL_TEMPLATE = cfg["fcoo"]["url_template"]
     data_handler.ARGO_CACHE_DIR   = ARGO_CACHE_DIR
-    data_handler.FCOO_CACHE_DIR   = FCOO_CACHE_DIR
 
 
 # Defaults (overwritten by run() via config)
@@ -136,9 +134,22 @@ def _extend_trajectories(floats_db: dict[str, FloatRow]) -> None:
                     row.models[model].missed_model_pulls += 1
             continue
 
+        lat_min = float(raw.lat.min())
+        lat_max = float(raw.lat.max())
+        lon_min = float(raw.lon.min())
+        lon_max = float(raw.lon.max())
+
         for row in floats_db.values():
             if row.is_dead:
                 continue
+
+            anchor_lat, anchor_lon, anchor_time = row.last_real_position
+            in_domain = lat_min <= anchor_lat <= lat_max and lon_min <= anchor_lon <= lon_max
+            if not in_domain:
+                row.models.pop(model, None)
+                continue
+            if model not in row.models:
+                row.models[model] = ModelTrack(trajectory=[(anchor_time, anchor_lat, anchor_lon)])
 
             track = row.models[model]
             issue_time = track.trajectory[-1][0]  # invariant: trajectory always has >= 1 point
@@ -217,6 +228,8 @@ def _reconcile_with_argo(
 
         if not was_overdue:
             for model in MODELS:
+                if model not in row.models:
+                    continue
                 predicted = _lookup(row.models[model].trajectory, real_time)
                 if predicted is not None:
                     error_m = _haversine_error_m(real_lat, real_lon, *predicted)
@@ -228,6 +241,8 @@ def _reconcile_with_argo(
 
         row.last_real_position = (real_lat, real_lon, real_time)
         for model in MODELS:
+            if model not in row.models:
+                continue
             row.models[model].trajectory = [(real_time, real_lat, real_lon)]
             row.models[model].missed_model_pulls = 0
 
