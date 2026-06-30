@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-06-30T08:11:27.708319",
+  "updated_at": "2026-06-30T18:25:57.719088",
   "model_colors": {
     "cmems": "#00D4FF",
     "fcoo_dk": "#FF8C42",
@@ -9,31 +9,31 @@
     "cmems": {
       "display_name": "CMEMS Baltic",
       "color": "#00D4FF",
-      "n_total": 13,
-      "mean_error_km": 0.96,
-      "median_error_km": 0.32,
+      "n_total": 14,
+      "mean_error_km": 0.89,
+      "median_error_km": 0.28,
       "recent_7d": {
-        "n": 11,
-        "mean_km": 1.13
+        "n": 12,
+        "mean_km": 1.04
       },
       "recent_30d": {
-        "n": 13,
-        "mean_km": 0.96
+        "n": 14,
+        "mean_km": 0.89
       }
     },
     "fcoo_dk": {
       "display_name": "FCOO DK (coarse)",
       "color": "#FF8C42",
-      "n_total": 14,
-      "mean_error_km": 2.28,
-      "median_error_km": 0.4,
+      "n_total": 15,
+      "mean_error_km": 2.13,
+      "median_error_km": 0.39,
       "recent_7d": {
-        "n": 12,
-        "mean_km": 2.66
+        "n": 13,
+        "mean_km": 2.46
       },
       "recent_30d": {
-        "n": 14,
-        "mean_km": 2.28
+        "n": 15,
+        "mean_km": 2.13
       }
     }
   },
@@ -77,6 +77,18 @@
     {
       "float_id": "2904032",
       "model": "fcoo_dk",
+      "t": "2026-06-28T09:17:00",
+      "error_km": 0.0
+    },
+    {
+      "float_id": "2904032",
+      "model": "cmems",
+      "t": "2026-06-28T09:17:00",
+      "error_km": 0.0
+    },
+    {
+      "float_id": "2904032",
+      "model": "fcoo_dk",
       "t": "2026-06-28T08:32:00",
       "error_km": 0.32
     },
@@ -100,15 +112,15 @@
     },
     {
       "float_id": "7902194",
-      "model": "fcoo_dk",
-      "t": "2026-06-26T23:34:30",
-      "error_km": 8.13
-    },
-    {
-      "float_id": "7902194",
       "model": "cmems",
       "t": "2026-06-26T23:34:30",
       "error_km": 0.62
+    },
+    {
+      "float_id": "7902194",
+      "model": "fcoo_dk",
+      "t": "2026-06-26T23:34:30",
+      "error_km": 8.13
     },
     {
       "float_id": "6990707",
