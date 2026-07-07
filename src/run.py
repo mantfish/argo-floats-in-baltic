@@ -223,6 +223,13 @@ def _reconcile_with_argo(
         was_overdue = row.is_overdue(real_time, threshold_days=OVERDUE_DAYS)
 
         if not was_overdue:
+            # Distance the float actually drifted since its previous confirmed
+            # surfacing -- same for every model at this event, so compute it
+            # once. Lets error_pct (error_m / drift_m) be derived downstream
+            # without re-deriving "actual drift" from surfacing_history.
+            prev_lat, prev_lon, _ = row.last_real_position
+            drift_m = _haversine_error_m(prev_lat, prev_lon, real_lat, real_lon)
+
             for model in MODELS:
                 if model not in row.models:
                     continue
@@ -237,9 +244,10 @@ def _reconcile_with_argo(
                     )
                 else:
                     error_m = _haversine_error_m(real_lat, real_lon, *predicted)
-                    new_rows.append(
-                        {"float_id": float_id, "model": model, "t": real_time, "error_m": error_m}
-                    )
+                    new_rows.append({
+                        "float_id": float_id, "model": model, "t": real_time,
+                        "error_m": error_m, "drift_m": drift_m,
+                    })
         # else: excluded from error_db per the 10-day rule -- still reset
         # below regardless: "if we get a new ping, great, we start from 0 again."
 

@@ -121,10 +121,20 @@ def export_floats(floats_db: dict[str, FloatRow], now: datetime) -> list[dict]:
     return floats_out
 
 
+MIN_DRIFT_M_FOR_PCT = 100.0   # below this, the float barely moved -- error/drift blows up on noise
+
+
 def export_leaderboard(error_db: pd.DataFrame) -> dict:
     """
     Build leaderboard.json: per-model aggregate error statistics and the 50
     most recent scoring events.
+
+    error_pct = error_m / drift_m, i.e. the position error as a fraction of
+    how far the float actually drifted between its previous and current
+    confirmed real surfacing -- a raw error_km alone reads very differently
+    for a float that drifted 5km vs. 200km. Only computed where drift_m is
+    present and exceeds MIN_DRIFT_M_FOR_PCT; older rows saved before drift_m
+    was tracked, or events where the float barely moved, get None.
     """
     now = datetime.utcnow()
 
@@ -136,12 +146,22 @@ def export_leaderboard(error_db: pd.DataFrame) -> dict:
         edb["t"] = pd.to_datetime(edb["t"])
         edb["error_km"] = edb["error_m"] / 1000.0
 
+        if "drift_m" in edb.columns:
+            has_drift = edb["drift_m"].notna() & (edb["drift_m"] >= MIN_DRIFT_M_FOR_PCT)
+            edb["error_pct"] = pd.NA
+            edb.loc[has_drift, "error_pct"] = (
+                edb.loc[has_drift, "error_m"] / edb.loc[has_drift, "drift_m"] * 100.0
+            )
+        else:
+            edb["error_pct"] = pd.NA
+
         cutoff_7d  = now - timedelta(days=7)
         cutoff_30d = now - timedelta(days=30)
 
         for model, sub in edb.groupby("model"):
             r7  = sub[sub["t"] >= cutoff_7d]["error_km"]
             r30 = sub[sub["t"] >= cutoff_30d]["error_km"]
+            pct = sub["error_pct"].dropna().astype(float)
 
             models_stats[str(model)] = {
                 "display_name": MODEL_DISPLAY.get(str(model), str(model)),
@@ -149,6 +169,8 @@ def export_leaderboard(error_db: pd.DataFrame) -> dict:
                 "n_total": int(len(sub)),
                 "mean_error_km":   _round(sub["error_km"].mean()),
                 "median_error_km": _round(sub["error_km"].median()),
+                "mean_error_pct":   _round(pct.mean())   if len(pct) else None,
+                "median_error_pct": _round(pct.median()) if len(pct) else None,
                 "recent_7d": {
                     "n":        int(len(r7)),
                     "mean_km":  _round(r7.mean())  if len(r7)  else None,
@@ -165,6 +187,7 @@ def export_leaderboard(error_db: pd.DataFrame) -> dict:
                 "model":    str(ev["model"]),
                 "t":        ev["t"].isoformat(),
                 "error_km": _round(ev["error_km"]),
+                "error_pct": _round(ev["error_pct"]) if pd.notna(ev["error_pct"]) else None,
             })
 
     result = {

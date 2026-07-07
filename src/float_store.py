@@ -135,7 +135,7 @@ def load_error_db(store_dir: Path) -> pd.DataFrame:
     """
     p = Path(store_dir) / "errors.parquet"
     if not p.exists():
-        return pd.DataFrame(columns=["float_id", "model", "t", "error_m"])
+        return pd.DataFrame(columns=["float_id", "model", "t", "error_m", "drift_m"])
     return pd.read_parquet(p)
 
 

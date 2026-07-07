@@ -127,6 +127,9 @@ for wmo, row in floats_db.items():
     t = NOW - timedelta(days=45)
     while t < NOW - timedelta(days=2):
         t += timedelta(days=surf_interval_days * rng.uniform(0.9, 1.1))
+        # Plausible drift distance for this cycle length, shared across models
+        # (the float only drifted once -- it's the error that differs per model).
+        drift_km = max(5.0, surf_interval_days * rng.uniform(8.0, 25.0))
         for model, base_km in base_errors.items():
             err_km = max(0.5, rng.gauss(base_km, base_km * 0.4))
             error_rows.append({
@@ -134,6 +137,7 @@ for wmo, row in floats_db.items():
                 "model": model,
                 "t": t,
                 "error_m": err_km * 1000,
+                "drift_m": drift_km * 1000,
             })
 
 error_db = pd.DataFrame(error_rows)

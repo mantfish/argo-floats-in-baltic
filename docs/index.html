@@ -230,6 +230,11 @@
     font-weight: 500;
   }
   canvas { display: block; }
+  .chart-canvas-wrap {
+    position: relative;
+    height: 110px;
+    width: 100%;
+  }
 
   /* ── Events table ── */
   .events-table-wrap {
@@ -327,7 +332,9 @@
   <div class="section-label">Error Over Time — 30-day rolling window</div>
   <div class="chart-wrap">
     <div class="chart-title">Mean position error per scoring event (km)</div>
-    <canvas id="error-chart" height="110"></canvas>
+    <div class="chart-canvas-wrap">
+      <canvas id="error-chart"></canvas>
+    </div>
   </div>
 
   <div class="section-label">Recent Scoring Events</div>
@@ -339,10 +346,11 @@
           <th>Model</th>
           <th>Surfacing Time (UTC)</th>
           <th>Position Error</th>
+          <th>% of Drift</th>
         </tr>
       </thead>
       <tbody id="events-tbody">
-        <tr><td colspan="4" class="no-data">Loading…</td></tr>
+        <tr><td colspan="5" class="no-data">Loading…</td></tr>
       </tbody>
     </table>
   </div>
@@ -406,6 +414,10 @@ async function init() {
             <div class="model-stat-label">7-day mean</div>
             <div class="model-stat-value">${r7.mean_km ?? '—'}<span class="model-stat-unit">km</span></div>
           </div>
+          <div class="model-stat">
+            <div class="model-stat-label">Mean % of Drift</div>
+            <div class="model-stat-value">${m.mean_error_pct ?? '—'}<span class="model-stat-unit">%</span></div>
+          </div>
         </div>
         <div class="model-stat-sub" style="color:${trendColor}">${trend}</div>
         <span class="model-badge">${m.n_total} scoring events</span>
@@ -420,7 +432,7 @@ async function init() {
   // Events table
   const tbody = document.getElementById('events-tbody');
   if (!data.recent_events.length) {
-    tbody.innerHTML = '<tr><td colspan="4" class="no-data">No scoring events yet.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" class="no-data">No scoring events yet.</td></tr>';
   } else {
     tbody.innerHTML = data.recent_events.map(ev => {
       const color = MODEL_COLORS[ev.model] || '#8C8C82';
@@ -432,6 +444,7 @@ async function init() {
         <td class="model-dot"><span class="inner"><span class="dot" style="background:${color}"></span>${modelName}</span></td>
         <td>${dtStr}</td>
         <td class="error-val">${ev.error_km.toFixed(1)} km</td>
+        <td class="error-val">${ev.error_pct !== null ? ev.error_pct.toFixed(0) + '%' : '—'}</td>
       </tr>`;
     }).join('');
   }
@@ -531,7 +544,6 @@ function buildChart(data) {
       },
     },
   });
-  canvas.style.height = '110px';
 }
 
 init().catch(err => {
