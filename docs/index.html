@@ -327,7 +327,7 @@
   <div class="section-label">Error Over Time — 30-day rolling window</div>
   <div class="chart-wrap">
     <div class="chart-title">Mean position error per scoring event (km)</div>
-    <canvas id="error-chart" height="150"></canvas>
+    <canvas id="error-chart" height="110"></canvas>
   </div>
 
   <div class="section-label">Recent Scoring Events</div>
@@ -531,7 +531,7 @@ function buildChart(data) {
       },
     },
   });
-  canvas.style.height = '150px';
+  canvas.style.height = '110px';
 }
 
 init().catch(err => {
