@@ -82,30 +82,22 @@ def xy_to_latlon(x: float, y: float, anchor_lat: float, anchor_lon: float) -> tu
     return lat, lon
 
 
-def build_interpolators(model_data: xr.Dataset) -> tuple[Callable, Callable]:
+def _grid_interpolators(
+    t_s: np.ndarray, depth: np.ndarray, lat: np.ndarray, lon: np.ndarray,
+    u_arr: np.ndarray, v_arr: np.ndarray,
+) -> tuple[Callable, Callable, tuple[tuple[float, float], tuple[float, float], tuple[float, float]]]:
     """
-    Build interp_u / interp_v callables from `model_data`.
-
-    Expects the normalised schema that data_handler produces:
-        dims : time, depth, lat, lon
-        vars : u, v  (m/s, eastward / northward)
-
-    Each callable takes a 2-D array of [t_s, depth_m, lat, lon] rows
-    and returns one float per row.  Out-of-bounds queries return 0.0
-    (open-ocean boundary -- callers treat NaN/missing as no current).
+    Build (interp_u, interp_v, bounds) for one regular (time, depth, lat, lon)
+    grid. bounds is ((depth_min, depth_max), (lat_min, lat_max), (lon_min,
+    lon_max)) -- used by the multi-grid 'fcoo' path to decide which grid's
+    interpolator covers a given query point.
     """
     from scipy.interpolate import RegularGridInterpolator
 
-    # Pull 1-D coordinate arrays and convert time to float64 seconds since epoch
-    t_s   = model_data["time"].values.astype("datetime64[s]").astype(np.float64)
-    depth = model_data["depth"].values.astype(np.float64)
-    lat   = model_data["lat"].values.astype(np.float64)
-    lon   = model_data["lon"].values.astype(np.float64)
-
     # float32 halves the memory vs float64; position errors at km scale
     # don't require mm/s current precision.
-    u_arr = model_data["u"].values.astype(np.float32)  # (time, depth, lat, lon)
-    v_arr = model_data["v"].values.astype(np.float32)
+    u_arr = u_arr.astype(np.float32)
+    v_arr = v_arr.astype(np.float32)
 
     # Replace NaN (land/mask) with 0 so interpolation doesn't propagate NaNs
     u_arr = np.where(np.isnan(u_arr), np.float32(0.0), u_arr)
@@ -125,6 +117,91 @@ def build_interpolators(model_data: xr.Dataset) -> tuple[Callable, Callable]:
         (t_s, depth, lat, lon), v_arr,
         method="linear", bounds_error=False, fill_value=0.0,
     )
+    bounds = ((float(depth.min()), float(depth.max())),
+              (float(lat.min()), float(lat.max())),
+              (float(lon.min()), float(lon.max())))
+    return interp_u, interp_v, bounds
+
+
+def _build_fcoo_interpolators(model_data: xr.Dataset, t_s: np.ndarray) -> tuple[Callable, Callable]:
+    """
+    Build combined interp_u/interp_v for the unified 'fcoo' model, which
+    carries two grids sharing one time coordinate (see data_handler._fetch_fcoo):
+        idk -- finer, inner-Danish-waters only, 6 depth levels to 50 m
+        dk  -- coarser, full domain, 10 depth levels to 200 m
+    idk is preferred: a query point inside idk's (depth, lat, lon) bounding
+    box uses idk's interpolated value; otherwise dk's. Both callables must be
+    called with the same (t, z, lat, lon) row so they agree on which grid to
+    use -- true for every call site today (simulate_cycle._query_uv always
+    queries u and v at the same point).
+    """
+    idk_u, idk_v, idk_bounds = _grid_interpolators(
+        t_s,
+        model_data["depth_idk"].values.astype(np.float64),
+        model_data["lat_idk"].values.astype(np.float64),
+        model_data["lon_idk"].values.astype(np.float64),
+        model_data["u_idk"].values,
+        model_data["v_idk"].values,
+    )
+    dk_u, dk_v, _ = _grid_interpolators(
+        t_s,
+        model_data["depth_dk"].values.astype(np.float64),
+        model_data["lat_dk"].values.astype(np.float64),
+        model_data["lon_dk"].values.astype(np.float64),
+        model_data["u_dk"].values,
+        model_data["v_dk"].values,
+    )
+    (z0, z1), (lat0, lat1), (lon0, lon1) = idk_bounds
+
+    def _in_idk_bounds(z: float, lat: float, lon: float) -> bool:
+        return z0 <= z <= z1 and lat0 <= lat <= lat1 and lon0 <= lon <= lon1
+
+    def combined_u(rows):
+        out = np.empty(len(rows), dtype=np.float64)
+        for i, (t, z, lat, lon) in enumerate(rows):
+            src = idk_u if _in_idk_bounds(z, lat, lon) else dk_u
+            out[i] = src([[t, z, lat, lon]])[0]
+        return out
+
+    def combined_v(rows):
+        out = np.empty(len(rows), dtype=np.float64)
+        for i, (t, z, lat, lon) in enumerate(rows):
+            src = idk_v if _in_idk_bounds(z, lat, lon) else dk_v
+            out[i] = src([[t, z, lat, lon]])[0]
+        return out
+
+    return combined_u, combined_v
+
+
+def build_interpolators(model_data: xr.Dataset) -> tuple[Callable, Callable]:
+    """
+    Build interp_u / interp_v callables from `model_data`.
+
+    For the single-grid schema (CMEMS):
+        dims : time, depth, lat, lon
+        vars : u, v  (m/s, eastward / northward)
+    For the merged FCOO schema (dk + idk, see data_handler._fetch_fcoo):
+        dims : time, depth_dk, lat_dk, lon_dk, depth_idk, lat_idk, lon_idk
+        vars : u_dk, v_dk, u_idk, v_idk
+    detected via presence of "u_dk" -- resolved into a single combined
+    interpolator pair (idk preferred, dk fallback; see _build_fcoo_interpolators).
+
+    Each callable takes a 2-D array of [t_s, depth_m, lat, lon] rows
+    and returns one float per row.  Out-of-bounds queries return 0.0
+    (open-ocean boundary -- callers treat NaN/missing as no current).
+    """
+    t_s = model_data["time"].values.astype("datetime64[s]").astype(np.float64)
+
+    if "u_dk" in model_data.data_vars:
+        return _build_fcoo_interpolators(model_data, t_s)
+
+    depth = model_data["depth"].values.astype(np.float64)
+    lat   = model_data["lat"].values.astype(np.float64)
+    lon   = model_data["lon"].values.astype(np.float64)
+    u_arr = model_data["u"].values
+    v_arr = model_data["v"].values
+
+    interp_u, interp_v, _ = _grid_interpolators(t_s, depth, lat, lon, u_arr, v_arr)
     return interp_u, interp_v
 
 

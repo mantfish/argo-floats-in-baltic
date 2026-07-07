@@ -69,9 +69,8 @@ def _make_float(
 
     models = {}
     for model, (du, dv) in {
-        "cmems":    ( 0.04,  0.02),
-        "fcoo_dk":  ( 0.06,  0.01),
-        "fcoo_idk": ( 0.03,  0.03),
+        "cmems": ( 0.04,  0.02),
+        "fcoo":  ( 0.06,  0.01),
     }.items():
         traj = _drift_trajectory(
             anchor_lat, anchor_lon, anchor_time,
@@ -123,7 +122,7 @@ floats_db: dict[str, FloatRow] = {
 
 error_rows = []
 for wmo, row in floats_db.items():
-    base_errors = {"cmems": 14.2, "fcoo_dk": 19.7, "fcoo_idk": 11.3}
+    base_errors = {"cmems": 14.2, "fcoo": 15.5}
     surf_interval_days = row.cycle_action.cycle_hours / 24.0
     t = NOW - timedelta(days=45)
     while t < NOW - timedelta(days=2):

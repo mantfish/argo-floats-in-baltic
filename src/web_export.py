@@ -28,16 +28,14 @@ HISTORY_DAYS  = 30   # trajectory history window exported to the map
 
 # Human-readable display names for the model keys
 MODEL_DISPLAY = {
-    "cmems":     "CMEMS Baltic",
-    "fcoo_dk":   "FCOO DK (coarse)",
-    "fcoo_idk":  "FCOO IDK (600 m)",
+    "cmems": "CMEMS Baltic",
+    "fcoo":  "FCOO GETM",
 }
 
 # Canonical model colors -- same palette used in both HTML pages
 MODEL_COLOR = {
-    "cmems":    "#00D4FF",
-    "fcoo_dk":  "#FF8C42",
-    "fcoo_idk": "#98D8C8",
+    "cmems": "#00D4FF",
+    "fcoo":  "#FF8C42",
 }
 
 

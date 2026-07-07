@@ -3,23 +3,31 @@ data_handler.py
 ================
 All external data acquisition for the CMEMS/FCOO leaderboard.
 
-FCOO data is accessed via OPeNDAP (pydap) -- two products:
-    fcoo_idk -- 600 m inner-Danish grid  (idk-600m_3D-velocities_surface)
-    fcoo_dk  -- 1 nm North Sea + Baltic  (nsbalt-1nm_velocities_surface)
+FCOO ("fcoo" model) is accessed via OPeNDAP, using plain xr.open_dataset()
+against the shared dk_nested.velocities.Z3D_<YYYYMMDDHH>.nc GETM product --
+one file per forecast run containing BOTH FCOO grids as separate variable
+groups, merged here into a single model rather than two:
+    dk  -- 1 nm North Sea + Baltic, full domain, 10 real depth levels (5-200 m)
+    idk -- 600 m inner-Danish waters (a spatial nest, not a subgrid of dk),
+           6 real depth levels (5-50 m)
 
-Chunked pydap requests (~8 timesteps each) replace the previous single
-1.85 GB HTTP download, which was reliably dropped by the server on
-GitHub Actions runners (Azure data-centre IPs).
+The file is discovered (latest by run timestamp) and opened once per
+pipeline run, shared between both grids' fetches.
 
-All returned datasets follow a standard schema so the rest of the
-pipeline never needs to know which model it's working with:
+CMEMS returns the pipeline's plain single-grid schema:
     dims : time, depth, lat, lon
     vars : u, v  (m/s, eastward / northward)
+FCOO returns both grids merged, sharing one time coord but keeping separate
+depth/lat/lon dims per grid (dk and idk are different meshes, not one
+rectilinear grid -- they can't be merged into a single RegularGridInterpolator
+input). See simulate.build_interpolators for how a single (u, v) query is
+resolved from the two grids (idk preferred where its bounds cover the query
+point, dk as fallback).
 
-depth has two levels [0, 2000] m with identical surface velocities at
-both -- this keeps build_interpolators (RegularGridInterpolator) in-bounds
-for all queried depths rather than returning fill_value=0 for depth
-queries that exceed a singleton axis.
+depth is each grid's real vertical levels -- no fabricated axis. Floats
+queried below a grid's deepest level or above its shallowest get
+fill_value=0.0 from RegularGridInterpolator, which is the correct behavior
+once depth is real rather than duplicated.
 """
 
 from __future__ import annotations
@@ -52,7 +60,7 @@ class Region:
     lon_max: float
 
 
-MODELS = ("cmems", "fcoo_dk", "fcoo_idk")
+MODELS = ("cmems", "fcoo")
 
 CMEMS_DATASET_ID = "cmems_mod_bal_phy_anfc_PT1H-i_202411"
 CMEMS_DEPTH_MAX  = 200.0   # metres -- floats don't go deeper in the Baltic
@@ -61,11 +69,14 @@ FCOO_BASE        = "https://data.fcoo.dk/webmap/v2/data/FCOO/GETM/"
 FCOO_KNOTS_TO_MS = 0.514444
 FCOO_FILL        = -9999.0
 
-# OPeNDAP product prefix for each model key
-_FCOO_PREFIX = {
-    "fcoo_idk": "idk-600m_3D-velocities_surface",
-    "fcoo_dk":  "nsbalt-1nm_velocities_surface",
-}
+# Grid-variable suffixes (uu_<suffix>, latc_<suffix>, ...) within the shared
+# dk_nested.velocities.Z3D_<ts>.nc file -- 'fcoo' merges both into one model
+# (see simulate.build_interpolators: idk preferred, dk fallback).
+_FCOO_GRID_DK  = "dk"
+_FCOO_GRID_IDK = "idk"
+
+# Filename prefix used to discover the latest shared Z3D file via _latest_getm_file
+_FCOO_Z3D_PREFIX = "dk_nested.velocities.Z3D_"
 
 # Browser User-Agent so institutional servers don't block the requests
 _BROWSER_UA = (
@@ -95,15 +106,20 @@ def download_model_data(
     subsetting API to avoid downloading the full archive.  FCOO ignores them
     (the file on the server already covers a fixed window).
 
-    Returns an xr.Dataset with:
+    Returns an xr.Dataset with, for "cmems":
         dims : time, depth, lat, lon
         vars : u (m/s eastward), v (m/s northward)
+    or for "fcoo" (both GETM grids merged, sharing one time coord --
+    see simulate.build_interpolators for how these get resolved into a
+    single current field):
+        dims : time, depth_dk, lat_dk, lon_dk, depth_idk, lat_idk, lon_idk
+        vars : u_dk, v_dk, u_idk, v_idk  (m/s eastward / northward)
     Does NOT trim -- caller must call trim_to_forecast_only() first.
     """
     if model == "cmems":
         return _fetch_cmems(region, issue_time, end_time)
-    elif model in _FCOO_PREFIX:
-        return _fetch_fcoo(model, region)
+    elif model == "fcoo":
+        return _fetch_fcoo(region)
     else:
         raise ValueError(f"Unknown model {model!r}. Expected one of {MODELS}")
 
@@ -194,18 +210,15 @@ def _fetch_cmems(
 
 # -- FCOO (OPeNDAP) ----------------------------------------------------------
 
+_fcoo_z3d_url: Optional[str] = None
 _fcoo_ds_cache: dict[str, xr.Dataset] = {}
 
-
-def _fetch_fcoo(model: str, region: Region) -> xr.Dataset:
-    """Download the requested FCOO grid via OPeNDAP and return a pipeline Dataset."""
-    if model not in _fcoo_ds_cache:
-        files = _list_getm_files()
-        if model == "fcoo_idk":
-            _fcoo_ds_cache[model] = _fetch_fcoo_idk(files, region)
-        else:
-            _fcoo_ds_cache[model] = _fetch_fcoo_nsbalt(files, region)
-    return _fcoo_ds_cache[model]
+# Timesteps per OPeNDAP request, per grid. 'idk' is a larger array per
+# timestep than 'dk' (478x450x6 vs 362x290x10 points) and was observed live
+# to hit the silent-corruption failure mode far more often at the same chunk
+# size -- smaller chunks make each individual request less likely to trigger it.
+_FCOO_TIME_CHUNK = {"dk": 8, "idk": 3}
+_FCOO_LOAD_MAX_RETRIES = 5
 
 
 def _list_getm_files() -> list[str]:
@@ -229,195 +242,176 @@ def _latest_getm_file(files: list[str], prefix: str) -> str | None:
     return max(matches, key=_ts)
 
 
-def _fetch_coords_1d(fname: str, *varnames: str) -> dict[str, np.ndarray]:
-    """Fetch 1-D coordinate arrays from the OPeNDAP .ascii endpoint."""
-    url = FCOO_BASE + fname + ".ascii?" + ",".join(varnames)
-    r = requests.get(url, timeout=30, headers={"User-Agent": _BROWSER_UA})
-    r.raise_for_status()
-
-    coords: dict[str, np.ndarray] = {}
-    current_var: str | None = None
-    vals: list[float] = []
-    for line in r.text.split("\n"):
-        line = line.strip()
-        if line in varnames:
-            if current_var and vals:
-                coords[current_var] = np.array(vals)
-            current_var = line
-            vals = []
-        elif line.startswith("[") and current_var:
-            vals.append(float(line.split("]", 1)[1].strip()))
-    if current_var and vals:
-        coords[current_var] = np.array(vals)
-    return coords
+def _get_fcoo_z3d_url() -> str:
+    """Discover (once) the latest shared dk_nested Z3D file URL."""
+    global _fcoo_z3d_url
+    if _fcoo_z3d_url is None:
+        files = _list_getm_files()
+        fname = _latest_getm_file(files, _FCOO_Z3D_PREFIX)
+        if fname is None:
+            raise RuntimeError(f"No dk_nested Z3D velocity file found at {FCOO_BASE}")
+        _fcoo_z3d_url = FCOO_BASE + fname
+        logger.info("FCOO Z3D: %s", fname)
+    return _fcoo_z3d_url
 
 
-def _fetch_time_coord(fname: str) -> np.ndarray:
+_FCOO_MAX_PLAUSIBLE_KNOTS = 50.0   # far above any real current; anything past this is corruption
+
+
+def _looks_valid(arr: np.ndarray) -> bool:
     """
-    Fetch the time coordinate from OPeNDAP .ascii and return as datetime64[s].
-    Trims zero-padded trailing slots (FCOO NetCDF3 preallocates 56 slots but
-    only writes the filled prefix).
+    Cheap sanity check against observed silent-corruption failure modes:
+      - a real velocity field always has a mix of NaN (land) and finite
+        values; an all-zero or all-NaN array means the backend returned
+        garbage rather than raising.
+      - occasionally only *some* cells come back corrupted, as wildly
+        implausible values (e.g. ~1e41) rather than all-zero/all-NaN --
+        catch those too via a generous physical bound (raw units are knots).
     """
-    coords = _fetch_coords_1d(fname, "time")
-    t_raw = coords.get("time", np.array([]))
-    if not len(t_raw):
-        return t_raw
-
-    # Parse epoch string from .das metadata
-    das = requests.get(
-        FCOO_BASE + fname + ".das", timeout=15, headers={"User-Agent": _BROWSER_UA}
-    ).text
-    m = re.search(r'units\s+"seconds since (\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})"', das)
-    if not m:
-        raise RuntimeError(f"Cannot parse time units from {FCOO_BASE + fname}.das")
-    epoch = np.datetime64(m.group(1).replace(" ", "T"), "s")
-
-    # Drop zero-padded trailing slots (raw value 0 repeats the epoch timestamp)
-    diffs = np.diff(t_raw)
-    n_valid = int(np.argmax(diffs <= 0)) + 1 if (diffs <= 0).any() else len(t_raw)
-    return epoch + t_raw[:n_valid].astype("timedelta64[s]")
+    if np.all(arr == 0) or np.all(np.isnan(arr)):
+        return False
+    finite = arr[np.isfinite(arr)]
+    if finite.size and np.any(np.abs(finite) > _FCOO_MAX_PLAUSIBLE_KNOTS):
+        return False
+    return True
 
 
-def _pydap_open(fname: str):
-    from pydap.client import open_url
-    return open_url(FCOO_BASE + fname)
-
-
-def _fetch_variable_chunked(
-    fname: str,
-    varname: str,
-    lat0: int, lat1: int,
-    lon0: int, lon1: int,
-    chunk_size: int = 8,
-    max_retries: int = 5,
-) -> np.ndarray:
+def _load_fcoo_var_chunked(url: str, var_name: str, sel: dict, n_time: int, chunk_size: int) -> np.ndarray:
     """
-    Fetch a (time, lat, lon) variable via pydap in time chunks of chunk_size.
-    Each chunk is retried independently with exponential backoff and a fresh
-    OPeNDAP connection on retry, so a dropped connection never aborts the
-    whole download.
+    Load a (time, depth, lat, lon) variable in small time chunks, each
+    retried independently (fresh connection) on failure or on a suspicious
+    all-zero/all-NaN result.
+
+    Chunking -- rather than one .isel().load() for all 56 timesteps at once
+    -- is deliberate: a full-size single-shot request was observed live to
+    come back silently corrupted (all-zero, no exception), more often for
+    larger requests. This mirrors why the original pydap-based fetch chunked
+    by ~8 timesteps too.
     """
-    ds  = _pydap_open(fname)
-    var = ds[varname]
-    n_time = var.shape[0]
     chunks = []
-
-    for t_start in range(0, n_time, chunk_size):
-        t_end = min(t_start + chunk_size - 1, n_time - 1)
-        for attempt in range(max_retries):
+    ds = xr.open_dataset(url)
+    for t0 in range(0, n_time, chunk_size):
+        t1 = min(t0 + chunk_size, n_time)
+        chunk_sel = dict(sel, time=slice(t0, t1))
+        last_exc: Optional[Exception] = None
+        for attempt in range(_FCOO_LOAD_MAX_RETRIES):
+            if attempt > 0:
+                ds = xr.open_dataset(url)  # fresh connection on retry
             try:
-                raw = var[t_start:t_end + 1, lat0:lat1 + 1, lon0:lon1 + 1]
-                chunks.append(np.asarray(raw.data).astype(np.float32))
-                logger.debug("  %s t[%d:%d] ok", varname, t_start, t_end)
-                break
+                arr = ds[var_name].isel(**chunk_sel).load().values
             except Exception as exc:
-                if attempt == max_retries - 1:
-                    raise
-                wait = 5 * 2 ** attempt   # 5 s, 10 s, 20 s, 40 s
+                last_exc = exc
                 logger.warning(
-                    "  %s t[%d:%d] attempt %d failed (%s), retry in %ds",
-                    varname, t_start, t_end, attempt + 1, exc, wait,
+                    "FCOO %s t[%d:%d] attempt %d/%d raised %s",
+                    var_name, t0, t1, attempt + 1, _FCOO_LOAD_MAX_RETRIES, exc,
                 )
-                time.sleep(wait)
-                ds  = _pydap_open(fname)  # fresh connection
-                var = ds[varname]
+                time.sleep(5 * 2 ** attempt)
+                continue
+
+            if _looks_valid(arr):
+                chunks.append(arr)
+                break
+
+            logger.warning(
+                "FCOO %s t[%d:%d] attempt %d/%d returned a suspicious "
+                "(all-zero/all-NaN/implausible-magnitude) chunk, retrying "
+                "with a fresh connection",
+                var_name, t0, t1, attempt + 1, _FCOO_LOAD_MAX_RETRIES,
+            )
+            time.sleep(5 * 2 ** attempt)
+        else:
+            raise RuntimeError(
+                f"FCOO {var_name} t[{t0}:{t1}]: repeatedly got invalid data from {url}"
+            ) from last_exc
 
     return np.concatenate(chunks, axis=0)
 
 
-def _build_fcoo_dataset(
-    uu: np.ndarray,
-    vv: np.ndarray,
-    latc: np.ndarray,
-    lonc: np.ndarray,
-    times: np.ndarray,
-) -> xr.Dataset:
+def _fetch_fcoo(region: Region) -> xr.Dataset:
     """
-    Package uu/vv arrays into the pipeline's standard (time, depth, lat, lon) schema.
+    Fetch both FCOO grids from the shared dk_nested Z3D file and merge them
+    into one dataset for the unified 'fcoo' model. Both grids share one
+    "time" coord (so trim_to_forecast_only/_is_empty/_last_timestamp in
+    run.py keep working unchanged) but keep their own depth/lat/lon dims,
+    since 'idk' (finer, inner-Danish-waters only) is not a subgrid of 'dk'
+    (coarser, full domain) -- simulate.build_interpolators resolves the two
+    into a single current field at query time (idk preferred, dk fallback).
+    """
+    if "fcoo" not in _fcoo_ds_cache:
+        url = _get_fcoo_z3d_url()
+        dk = _build_fcoo_dataset(url, _FCOO_GRID_DK, region)
+        idk = _build_fcoo_dataset(url, _FCOO_GRID_IDK, region)
+        _fcoo_ds_cache["fcoo"] = xr.Dataset(
+            {
+                "u_dk":  (["time", "depth_dk", "lat_dk", "lon_dk"], dk["u"].values),
+                "v_dk":  (["time", "depth_dk", "lat_dk", "lon_dk"], dk["v"].values),
+                "u_idk": (["time", "depth_idk", "lat_idk", "lon_idk"], idk["u"].values),
+                "v_idk": (["time", "depth_idk", "lat_idk", "lon_idk"], idk["v"].values),
+            },
+            coords={
+                "time":      dk["time"].values,
+                "depth_dk":  dk["depth"].values,
+                "lat_dk":    dk["lat"].values,
+                "lon_dk":    dk["lon"].values,
+                "depth_idk": idk["depth"].values,
+                "lat_idk":   idk["lat"].values,
+                "lon_idk":   idk["lon"].values,
+            },
+        )
+    return _fcoo_ds_cache["fcoo"]
 
-    depth = [0, 2000] m with surface velocities duplicated at both levels.
-    RegularGridInterpolator then returns the surface current at any queried
-    depth (interpolating between two equal values) rather than returning
-    fill_value=0 for out-of-bounds depth queries.
+
+def _build_fcoo_dataset(url: str, suffix: str, region: Region) -> xr.Dataset:
     """
+    Subset one grid ('dk' or 'idk') of the shared Z3D dataset to `region`
+    and normalize to the pipeline's standard schema:
+        dims : time, depth, lat, lon
+        vars : u, v  (m/s eastward / northward)
+    depth is the grid's real vertical levels -- no fabricated duplicate-
+    surface depth axis.
+    """
+    lat_name, lon_name, zax_name = f"latc_{suffix}", f"lonc_{suffix}", f"zax_{suffix}"
+    u_name, v_name = f"uu_{suffix}", f"vv_{suffix}"
+
+    ds = xr.open_dataset(url)   # cheap: metadata + small 1-D coords only, here
+    latc = ds[lat_name].values
+    lonc = ds[lon_name].values
+    times = ds["time"].values
+    n_time = ds.sizes["time"]
+
+    lat_idx = np.where((latc >= region.lat_min) & (latc <= region.lat_max))[0]
+    lon_idx = np.where((lonc >= region.lon_min) & (lonc <= region.lon_max))[0]
+    if not lat_idx.size or not lon_idx.size:
+        raise RuntimeError(f"FCOO {suffix} grid has no points inside the pipeline region")
+    lat0, lat1 = int(lat_idx[0]), int(lat_idx[-1])
+    lon0, lon1 = int(lon_idx[0]), int(lon_idx[-1])
+
+    sel = {lat_name: slice(lat0, lat1 + 1), lon_name: slice(lon0, lon1 + 1)}
+    logger.info(
+        "FCOO %s subset: %d lat x %d lon, %d depths, %d timesteps",
+        suffix, lat1 - lat0 + 1, lon1 - lon0 + 1, ds.sizes[zax_name], n_time,
+    )
+
+    # dims are already (time, zax, latc, lonc) == (time, depth, lat, lon) order
+    chunk_size = _FCOO_TIME_CHUNK[suffix]
+    uu = _load_fcoo_var_chunked(url, u_name, sel, n_time, chunk_size)
+    vv = _load_fcoo_var_chunked(url, v_name, sel, n_time, chunk_size)
+
+    # Defensive re-mask even though xr.open_dataset already CF-decodes
+    # _FillValue -> NaN (belt-and-suspenders in case decoding is ever bypassed).
     u = np.where(uu == FCOO_FILL, np.nan, uu).astype(np.float32) * FCOO_KNOTS_TO_MS
     v = np.where(vv == FCOO_FILL, np.nan, vv).astype(np.float32) * FCOO_KNOTS_TO_MS
 
-    # Duplicate surface layer on depth axis: (time, lat, lon) -> (time, 2, lat, lon)
-    u2 = np.stack([u, u], axis=1)
-    v2 = np.stack([v, v], axis=1)
-
     return xr.Dataset(
-        {"u": (["time", "depth", "lat", "lon"], u2),
-         "v": (["time", "depth", "lat", "lon"], v2)},
+        {"u": (["time", "depth", "lat", "lon"], u),
+         "v": (["time", "depth", "lat", "lon"], v)},
         coords={
             "time":  times,
-            "depth": np.array([0.0, 2000.0]),
-            "lat":   latc.astype(np.float64),
-            "lon":   lonc.astype(np.float64),
+            "depth": ds[zax_name].values.astype(np.float64),
+            "lat":   latc[lat0:lat1 + 1].astype(np.float64),
+            "lon":   lonc[lon0:lon1 + 1].astype(np.float64),
         },
     )
-
-
-def _fetch_fcoo_idk(files: list[str], region: Region) -> xr.Dataset:
-    """Fetch IDK (600 m inner-Danish) surface velocities via OPeNDAP."""
-    fname = _latest_getm_file(files, _FCOO_PREFIX["fcoo_idk"])
-    if fname is None:
-        raise RuntimeError(f"No IDK velocity file found at {FCOO_BASE}")
-    logger.info("FCOO IDK: %s", fname)
-
-    coords = _fetch_coords_1d(fname, "latc", "lonc")
-    latc, lonc = coords["latc"], coords["lonc"]
-    times = _fetch_time_coord(fname)
-    n_t = len(times)
-
-    lat_idx = np.where((latc >= region.lat_min) & (latc <= region.lat_max))[0]
-    lon_idx = np.where((lonc >= region.lon_min) & (lonc <= region.lon_max))[0]
-    if not lat_idx.size or not lon_idx.size:
-        raise RuntimeError("IDK grid has no points inside the pipeline region")
-    lat0, lat1 = int(lat_idx[0]), int(lat_idx[-1])
-    lon0, lon1 = int(lon_idx[0]), int(lon_idx[-1])
-
-    logger.info("IDK subset: %d lat × %d lon, %d timesteps",
-                lat1 - lat0 + 1, lon1 - lon0 + 1, n_t)
-
-    uu = _fetch_variable_chunked(fname, "uu", lat0, lat1, lon0, lon1)[:n_t]
-    vv = _fetch_variable_chunked(fname, "vv", lat0, lat1, lon0, lon1)[:n_t]
-
-    return _build_fcoo_dataset(uu, vv, latc[lat0:lat1 + 1], lonc[lon0:lon1 + 1], times)
-
-
-def _fetch_fcoo_nsbalt(files: list[str], region: Region) -> xr.Dataset:
-    """
-    Fetch NSBALT (1 nm North Sea + Baltic) surface velocities via OPeNDAP.
-    Subsets to region before downloading; chunked to keep each request small.
-    """
-    fname = _latest_getm_file(files, _FCOO_PREFIX["fcoo_dk"])
-    if fname is None:
-        raise RuntimeError(f"No NSBALT velocity file found at {FCOO_BASE}")
-    logger.info("FCOO NSBALT: %s", fname)
-
-    coords = _fetch_coords_1d(fname, "latc", "lonc")
-    latc, lonc = coords["latc"], coords["lonc"]
-    times = _fetch_time_coord(fname)
-    n_t = len(times)
-
-    lat_idx = np.where((latc >= region.lat_min) & (latc <= region.lat_max))[0]
-    lon_idx = np.where((lonc >= region.lon_min) & (lonc <= region.lon_max))[0]
-    if not lat_idx.size or not lon_idx.size:
-        raise RuntimeError("NSBALT grid has no points inside the pipeline region")
-    lat0, lat1 = int(lat_idx[0]), int(lat_idx[-1])
-    lon0, lon1 = int(lon_idx[0]), int(lon_idx[-1])
-
-    n_lat, n_lon = lat1 - lat0 + 1, lon1 - lon0 + 1
-    frac = (n_lat * n_lon) / (len(latc) * len(lonc))
-    logger.info("NSBALT subset: %d lat × %d lon (%.0f%% of grid), %d timesteps",
-                n_lat, n_lon, frac * 100, n_t)
-
-    uu = _fetch_variable_chunked(fname, "uu", lat0, lat1, lon0, lon1)[:n_t]
-    vv = _fetch_variable_chunked(fname, "vv", lat0, lat1, lon0, lon1)[:n_t]
-
-    return _build_fcoo_dataset(uu, vv, latc[lat0:lat1 + 1], lonc[lon0:lon1 + 1], times)
 
 
 # --------------------------------------------------------------------------- #
