@@ -130,6 +130,25 @@ def trim_to_forecast_only(model_data: xr.Dataset, issue_time: datetime) -> xr.Da
     return model_data.sel(time=model_data.time > issue_np)
 
 
+def model_domain_bounds(model_data: xr.Dataset) -> tuple[float, float, float, float]:
+    """
+    (lat_min, lat_max, lon_min, lon_max) actually covered by `model_data`.
+
+    Handles both schemas download_model_data can return: the single-grid
+    "lat"/"lon" coords (cmems), and fcoo's merged dual-grid coords
+    ("lat_dk"/"lat_idk" etc, no plain "lat") -- callers that just need the
+    overall domain extent (e.g. run.py's in-domain check) shouldn't need to
+    know which schema they got.
+    """
+    if "lat" in model_data.coords:
+        lat = model_data["lat"].values
+        lon = model_data["lon"].values
+    else:
+        lat = np.concatenate([model_data["lat_dk"].values, model_data["lat_idk"].values])
+        lon = np.concatenate([model_data["lon_dk"].values, model_data["lon_idk"].values])
+    return float(lat.min()), float(lat.max()), float(lon.min()), float(lon.max())
+
+
 # -- CMEMS -------------------------------------------------------------------
 
 def _fetch_cmems(

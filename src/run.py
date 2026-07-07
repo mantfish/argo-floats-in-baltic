@@ -135,10 +135,7 @@ def _extend_trajectories(floats_db: dict[str, FloatRow]) -> None:
                     row.models[model].missed_model_pulls += 1
             continue
 
-        lat_min = float(raw.lat.min())
-        lat_max = float(raw.lat.max())
-        lon_min = float(raw.lon.min())
-        lon_max = float(raw.lon.max())
+        lat_min, lat_max, lon_min, lon_max = data_handler.model_domain_bounds(raw)
 
         for row in floats_db.values():
             if row.is_dead:
