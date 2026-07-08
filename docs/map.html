@@ -354,6 +354,10 @@
         <div class="legend-line" style="background:#8C8C82"></div>
         <span class="legend-label">Trajectory history</span>
       </div>
+      <div class="legend-row">
+        <div class="legend-dot" style="background:#8C8C82;width:6px;height:6px"></div>
+        <span class="legend-label">Predicted at surfacing</span>
+      </div>
     </div>
 
     <div id="panel">
@@ -381,6 +385,10 @@ window.onerror = (msg, src, line) => { _showFatalError(`${msg} (${src}:${line})`
 const MODEL_COLORS = {
   cmems: '#147D74',
   fcoo:  '#C2872A',
+};
+const MODEL_NAMES = {
+  cmems: 'CMEMS Baltic',
+  fcoo:  'FCOO GETM',
 };
 
 // ─── Leaflet setup ────────────────────────────────────────────────────────────
@@ -583,6 +591,34 @@ function drawFloatOverlays(f) {
     dot.bindTooltip(`Real surfacing<br>${fmtTime(p.time)}`, { direction: 'top' });
     dot.addTo(map);
     overlayLayers.push(dot);
+  }
+
+  // Past scoring events: each model's predicted position at a real surfacing,
+  // with a thin line back to that surfacing's real (red) position so the
+  // error is visible at a glance.
+  const scoring = f.scoring_history || [];
+  for (const ev of scoring) {
+    for (const [key, pred] of Object.entries(ev.predictions)) {
+      const color = MODEL_COLORS[key] || '#8C8C82';
+      const name  = MODEL_NAMES[key] || key;
+
+      const line = L.polyline(
+        [[ev.real.lat, ev.real.lon], [pred.lat, pred.lon]],
+        { color, weight: 1, opacity: 0.55 }
+      );
+      line.addTo(map);
+      overlayLayers.push(line);
+
+      const dot = L.circleMarker([pred.lat, pred.lon], {
+        radius: 3, color, fillColor: color, fillOpacity: 0.85, weight: 1,
+      });
+      dot.bindTooltip(
+        `${name} predicted<br>${fmtTime(ev.t)}<br>error: ${pred.error_km.toFixed(1)} km`,
+        { direction: 'top' }
+      );
+      dot.addTo(map);
+      overlayLayers.push(dot);
+    }
   }
 
   // Last real position marker (dashed circle)

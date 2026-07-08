@@ -100,7 +100,7 @@ def run(config_path: Path | None = None) -> None:
     float_store.save_error_db(STORE_DIR, error_db)
 
     now = datetime.utcnow()
-    web_export.export_floats(floats_db, now)
+    web_export.export_floats(floats_db, error_db, now)
     web_export.export_leaderboard(error_db)
 
 
@@ -247,6 +247,8 @@ def _reconcile_with_argo(
                     new_rows.append({
                         "float_id": float_id, "model": model, "t": real_time,
                         "error_m": error_m, "drift_m": drift_m,
+                        "real_lat": real_lat, "real_lon": real_lon,
+                        "predicted_lat": predicted[0], "predicted_lon": predicted[1],
                     })
         # else: excluded from error_db per the 10-day rule -- still reset
         # below regardless: "if we get a new ping, great, we start from 0 again."

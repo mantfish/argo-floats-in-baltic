@@ -39,15 +39,64 @@ MODEL_COLOR = {
 }
 
 
-def export_floats(floats_db: dict[str, FloatRow], now: datetime) -> list[dict]:
+def _build_scoring_history(error_db: pd.DataFrame) -> dict[str, list[dict]]:
+    """
+    {float_id: [{t, real: {lat,lon}, predictions: {model: {lat,lon,error_km}}}]}
+
+    One entry per past confirmed surfacing that was actually scored (i.e. not
+    excluded by the overdue rule) -- real_lat/real_lon/predicted_lat/
+    predicted_lon are set alongside error_m/drift_m in run.py's
+    _reconcile_with_argo at the moment of scoring, since that's the only
+    place both the real position and each model's trajectory lookup at that
+    exact timestamp are available together (models[model].trajectory gets
+    reset to a single point on every anchor reset, so this can't be
+    reconstructed later from floats_db alone).
+    """
+    by_float: dict[str, list[dict]] = {}
+    if error_db.empty or "predicted_lat" not in error_db.columns:
+        return by_float
+
+    edb = error_db.copy()
+    edb["t"] = pd.to_datetime(edb["t"])
+
+    for (float_id, t), grp in edb.groupby(["float_id", "t"]):
+        first = grp.iloc[0]
+        if pd.isna(first.get("real_lat")):
+            continue
+        predictions = {}
+        for _, r in grp.iterrows():
+            if pd.isna(r.get("predicted_lat")):
+                continue
+            predictions[str(r["model"])] = {
+                "lat": round(float(r["predicted_lat"]), 5),
+                "lon": round(float(r["predicted_lon"]), 5),
+                "error_km": _round(r["error_m"] / 1000.0),
+            }
+        if not predictions:
+            continue
+        by_float.setdefault(str(float_id), []).append({
+            "t": t.isoformat(),
+            "real": {"lat": round(float(first["real_lat"]), 5), "lon": round(float(first["real_lon"]), 5)},
+            "predictions": predictions,
+        })
+
+    for events in by_float.values():
+        events.sort(key=lambda e: e["t"])
+    return by_float
+
+
+def export_floats(floats_db: dict[str, FloatRow], error_db: pd.DataFrame, now: datetime) -> list[dict]:
     """
     Build floats.json: per-float current predictions, next-surfacing estimates,
-    and recent trajectory history for each model.
+    recent trajectory history for each model, and past scoring history (real
+    vs. each model's predicted position at each past surfacing -- what the
+    map draws error lines from).
 
     `now` is the reference time for "predicted_now" lookups and is embedded in
     the output so the frontend can show data age.
     """
     cutoff = now - timedelta(days=HISTORY_DAYS)
+    scoring_by_float = _build_scoring_history(error_db)
     floats_out: list[dict] = []
 
     for float_id, row in floats_db.items():
@@ -103,6 +152,7 @@ def export_floats(floats_db: dict[str, FloatRow], now: datetime) -> list[dict]:
                 {"lat": round(lat, 5), "lon": round(lon, 5), "time": t.isoformat()}
                 for lat, lon, t in row.surfacing_history
             ],
+            "scoring_history": scoring_by_float.get(float_id, []),
             "cycle_action": {
                 "park_mode": ca.park_mode,
                 "cycle_hours": ca.cycle_hours,

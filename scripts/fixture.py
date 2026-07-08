@@ -51,6 +51,14 @@ def _drift_trajectory(
     return pts
 
 
+def _offset_latlon(lat: float, lon: float, distance_km: float, bearing_deg: float) -> tuple[float, float]:
+    """Move (lat, lon) by distance_km along bearing_deg (0=N, 90=E)."""
+    brg = math.radians(bearing_deg)
+    dlat = (distance_km / 111.0) * math.cos(brg)
+    dlon = (distance_km / (111.0 * math.cos(math.radians(lat)))) * math.sin(brg)
+    return lat + dlat, lon + dlon
+
+
 def _make_float(
     wmo: str,
     anchor_lat: float, anchor_lon: float, anchor_time: datetime,
@@ -124,20 +132,33 @@ error_rows = []
 for wmo, row in floats_db.items():
     base_errors = {"cmems": 14.2, "fcoo": 15.5}
     surf_interval_days = row.cycle_action.cycle_hours / 24.0
+    anchor_lat, anchor_lon, anchor_time = row.last_real_position
+    real_bearing = rng.uniform(0, 360)   # roughly consistent drift direction for this float
     t = NOW - timedelta(days=45)
     while t < NOW - timedelta(days=2):
         t += timedelta(days=surf_interval_days * rng.uniform(0.9, 1.1))
         # Plausible drift distance for this cycle length, shared across models
         # (the float only drifted once -- it's the error that differs per model).
         drift_km = max(5.0, surf_interval_days * rng.uniform(8.0, 25.0))
+
+        elapsed_days = (t - anchor_time).total_seconds() / 86400.0
+        real_lat, real_lon = _offset_latlon(
+            anchor_lat, anchor_lon, elapsed_days * rng.uniform(3.0, 8.0), real_bearing
+        )
+
         for model, base_km in base_errors.items():
             err_km = max(0.5, rng.gauss(base_km, base_km * 0.4))
+            pred_lat, pred_lon = _offset_latlon(real_lat, real_lon, err_km, rng.uniform(0, 360))
             error_rows.append({
                 "float_id": wmo,
                 "model": model,
                 "t": t,
                 "error_m": err_km * 1000,
                 "drift_m": drift_km * 1000,
+                "real_lat": real_lat,
+                "real_lon": real_lon,
+                "predicted_lat": pred_lat,
+                "predicted_lon": pred_lon,
             })
 
 error_db = pd.DataFrame(error_rows)
@@ -146,7 +167,7 @@ error_db = pd.DataFrame(error_rows)
 # Write JSON
 # --------------------------------------------------------------------------- #
 
-export_floats(floats_db, NOW)
+export_floats(floats_db, error_db, NOW)
 export_leaderboard(error_db)
 print(f"Wrote docs/data/floats.json ({len(floats_db)} floats)")
 print(f"Wrote docs/data/leaderboard.json ({len(error_rows)} scoring events)")
