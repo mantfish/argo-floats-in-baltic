@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-07-07T18:40:42.913657",
+  "updated_at": "2026-07-08T07:10:21.469140",
   "model_colors": {
     "cmems": "#00D4FF",
     "fcoo": "#FF8C42"
@@ -8,44 +8,72 @@
     "cmems": {
       "display_name": "CMEMS Baltic",
       "color": "#00D4FF",
-      "n_total": 39,
+      "n_total": 42,
       "mean_error_km": 0.67,
-      "median_error_km": 0.27,
-      "mean_error_pct": null,
-      "median_error_pct": null,
+      "median_error_km": 0.29,
+      "mean_error_pct": 101.51,
+      "median_error_pct": 101.51,
       "recent_7d": {
-        "n": 20,
-        "mean_km": 0.66
+        "n": 19,
+        "mean_km": 0.75
       },
       "recent_30d": {
-        "n": 39,
+        "n": 42,
         "mean_km": 0.67
       }
     },
     "fcoo": {
       "display_name": "FCOO GETM",
       "color": "#FF8C42",
-      "n_total": 2,
-      "mean_error_km": 0.0,
+      "n_total": 3,
+      "mean_error_km": 0.55,
       "median_error_km": 0.0,
-      "mean_error_pct": null,
-      "median_error_pct": null,
+      "mean_error_pct": 100.0,
+      "median_error_pct": 100.0,
       "recent_7d": {
-        "n": 2,
-        "mean_km": 0.0
+        "n": 3,
+        "mean_km": 0.55
       },
       "recent_30d": {
-        "n": 2,
-        "mean_km": 0.0
+        "n": 3,
+        "mean_km": 0.55
       }
     }
   },
   "recent_events": [
     {
+      "float_id": "7902194",
+      "model": "cmems",
+      "t": "2026-07-07T09:50:00",
+      "error_km": 0.42,
+      "error_pct": 100.0
+    },
+    {
+      "float_id": "6990707",
+      "model": "cmems",
+      "t": "2026-07-07T05:07:00",
+      "error_km": 1.7,
+      "error_pct": 103.03
+    },
+    {
+      "float_id": "6990707",
+      "model": "fcoo",
+      "t": "2026-07-07T05:07:00",
+      "error_km": 1.65,
+      "error_pct": 100.0
+    },
+    {
       "float_id": "3902607",
       "model": "cmems",
       "t": "2026-07-06T08:46:40",
       "error_km": 0.96,
+      "error_pct": null
+    },
+    {
+      "float_id": "2904032",
+      "model": "cmems",
+      "t": "2026-07-06T05:10:00",
+      "error_km": 0.0,
       "error_pct": null
     },
     {
