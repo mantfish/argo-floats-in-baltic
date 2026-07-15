@@ -3,3 +3,4 @@ data/argo_cache/
 __pycache__/
 *.pyc
 .venv/
+notebooks/*.ascii*
