@@ -142,6 +142,23 @@ def load_error_db(store_dir: Path) -> pd.DataFrame:
     return pd.read_parquet(p)
 
 
+def load_forecast_history(store_dir: Path) -> pd.DataFrame:
+    """
+    Read forecast_history.parquet -- one row per (float, model, pipeline run)
+    recording what that run's trajectory predicted for the float's next
+    surfacing, so successive predictions for the same real-world cycle can be
+    compared to see whether they converge as fresher forecast data arrives.
+    Returns empty DataFrame with correct columns if absent.
+    """
+    p = Path(store_dir) / "forecast_history.parquet"
+    if not p.exists():
+        return pd.DataFrame(columns=[
+            "float_id", "cycle_number", "forecast_name", "forecast",
+            "expected_surfacing_time", "expected_surfacing_lat", "expected_surfacing_lon",
+        ])
+    return pd.read_parquet(p)
+
+
 # --------------------------------------------------------------------------- #
 # Save
 # --------------------------------------------------------------------------- #
@@ -196,6 +213,13 @@ def save_error_db(store_dir: Path, error_db: pd.DataFrame) -> None:
     store_dir = Path(store_dir)
     store_dir.mkdir(parents=True, exist_ok=True)
     error_db.to_parquet(store_dir / "errors.parquet", index=False)
+
+
+def save_forecast_history(store_dir: Path, forecast_history_db: pd.DataFrame) -> None:
+    """Write forecast_history_db to forecast_history.parquet (whole-frame overwrite)."""
+    store_dir = Path(store_dir)
+    store_dir.mkdir(parents=True, exist_ok=True)
+    forecast_history_db.to_parquet(store_dir / "forecast_history.parquet", index=False)
 
 
 # --------------------------------------------------------------------------- #

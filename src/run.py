@@ -88,9 +88,14 @@ def run(config_path: Path | None = None) -> None:
 
     floats_db = float_store.load_floats_db(STORE_DIR)
     error_db = float_store.load_error_db(STORE_DIR)
+    forecast_history_db = float_store.load_forecast_history(STORE_DIR)
 
     _backfill_surfacing_history(floats_db)
-    _extend_trajectories(floats_db)
+    forecast_rows = _extend_trajectories(floats_db)
+    if forecast_rows:
+        forecast_history_db = pd.concat(
+            [forecast_history_db, pd.DataFrame(forecast_rows)], ignore_index=True
+        )
 
     argo_now = data_handler.download_argo_floats_in_domain(REGION)
     error_db = _reconcile_with_argo(floats_db, argo_now, error_db)
@@ -98,6 +103,7 @@ def run(config_path: Path | None = None) -> None:
 
     float_store.save_floats_db(STORE_DIR, floats_db)
     float_store.save_error_db(STORE_DIR, error_db)
+    float_store.save_forecast_history(STORE_DIR, forecast_history_db)
 
     now = datetime.utcnow()
     web_export.export_floats(floats_db, error_db, now)
@@ -108,17 +114,24 @@ def run(config_path: Path | None = None) -> None:
 # Loop 1: extend simulated trajectories
 # --------------------------------------------------------------------------- #
 
-def _extend_trajectories(floats_db: dict[str, FloatRow]) -> None:
+def _extend_trajectories(floats_db: dict[str, FloatRow]) -> list[dict]:
     """
     One model_data fetch per model -- not per float. trim_to_forecast_only
     is what runs per (float, model) pair, since each row's own trajectory
     tip defines "what this row has already consumed." That's a cheap
     in-memory filter on already-downloaded data, not a second network call,
     so this stays efficient despite the nested loop shape.
+
+    Returns one forecast_history row per (float, model) that actually got
+    extended this round -- what this run's freshest trajectory predicts for
+    the float's next surfacing. Frozen (no-new-data) rows are skipped: a
+    frozen cycle carries no new information, so recording one would just be
+    a duplicate of the previous row.
     """
     now        = datetime.utcnow()
     fetch_start = now - timedelta(days=1)   # 1-day lookback so no float is gapped
     fetch_end   = now + timedelta(days=5)   # one full max-cycle horizon
+    forecast_rows: list[dict] = []
 
     for model in MODELS:
         try:
@@ -172,6 +185,8 @@ def _extend_trajectories(floats_db: dict[str, FloatRow]) -> None:
                     tip_lon=tip_lon,
                     tip_time=tip_time,
                     until_time=_last_timestamp(model_data),
+                    bathy_interp=_bathy_interp,
+                    float_id=row.float_id,
                 )
             except Exception:
                 logger.warning(
@@ -182,6 +197,21 @@ def _extend_trajectories(floats_db: dict[str, FloatRow]) -> None:
                 continue
             track.missed_model_pulls = 0
             track.trajectory.extend(new_points)
+
+            surf_time = simulate.next_surfacing(anchor_time, row.cycle_action, now)
+            surf_pos = simulate.lookup_position(track.trajectory, surf_time)
+            if surf_pos is not None:
+                forecast_rows.append({
+                    "float_id": row.float_id,
+                    "cycle_number": len(row.surfacing_history),
+                    "forecast_name": model,
+                    "forecast": now,
+                    "expected_surfacing_time": surf_time,
+                    "expected_surfacing_lat": surf_pos[0],
+                    "expected_surfacing_lon": surf_pos[1],
+                })
+
+    return forecast_rows
 
 
 # --------------------------------------------------------------------------- #

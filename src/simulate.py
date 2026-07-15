@@ -30,6 +30,7 @@ ever breaks, phase recovery here breaks with it.
 
 from __future__ import annotations
 
+import logging
 import math
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -37,6 +38,8 @@ from typing import Callable, Optional
 
 import numpy as np
 import xarray as xr
+
+logger = logging.getLogger(__name__)
 
 _DESCENDING = "descending"
 _PARKING = "parking"
@@ -123,7 +126,72 @@ def _grid_interpolators(
     return interp_u, interp_v, bounds
 
 
-def _build_fcoo_interpolators(model_data: xr.Dataset, t_s: np.ndarray) -> tuple[Callable, Callable]:
+def _taper_to_seabed(
+    interp_u: Callable, interp_v: Callable,
+    depth_max: float,
+    bathy_interp: Optional[Callable[[float, float], float]],
+    label: str,
+) -> tuple[Callable, Callable]:
+    """
+    Wrap a grid's raw (u, v) callables so a query deeper than `depth_max`
+    (the grid's deepest real level) linearly tapers the current from its
+    value at `depth_max` down to 0 at the local seabed (`bathy_interp(lat,
+    lon)`), rather than the interpolator's own hard `fill_value=0.0` cutoff.
+    Motivated by bottom friction -- currents go to zero at the seabed, not
+    at whatever depth a particular data source happens to stop having
+    levels (see config.toml's CMEMS max_depth_m history: a grid's own depth
+    ceiling silently zeroing an entire float's parking-phase current is
+    exactly the failure mode this replaces). A query at or beyond the
+    seabed itself is clipped to 0. Only the deep side is handled here --
+    shallow-side out-of-range queries keep the interpolator's normal
+    fill_value=0.0.
+
+    Logs one warning (not per-row) the first time this triggers, so this
+    class of bug is visible instead of silent.
+
+    If `bathy_interp` is None (no bathymetry available to the caller),
+    returns (interp_u, interp_v) unchanged -- old zero-fill behavior.
+    """
+    if bathy_interp is None:
+        return interp_u, interp_v
+
+    warned = False
+
+    def _wrap(interp_raw: Callable) -> Callable:
+        def query(rows):
+            nonlocal warned
+            rows = np.asarray(rows, dtype=np.float64)
+            out = np.asarray(interp_raw(rows), dtype=np.float64)
+            deep = rows[:, 1] > depth_max
+            if np.any(deep):
+                if not warned:
+                    logger.warning(
+                        "%s: query depth exceeds grid's %.0fm range (deepest "
+                        "offending query: %.0fm) -- tapering toward seabed "
+                        "instead of zero-filling",
+                        label, depth_max, float(rows[deep, 1].max()),
+                    )
+                    warned = True
+                for i in np.nonzero(deep)[0]:
+                    t, z, lat, lon = rows[i]
+                    seabed = bathy_interp(float(lat), float(lon))
+                    if seabed > depth_max:
+                        frac = min(max((z - depth_max) / (seabed - depth_max), 0.0), 1.0)
+                        at_max = float(interp_raw([[t, depth_max, lat, lon]])[0])
+                        out[i] = at_max * (1.0 - frac)
+                    else:
+                        out[i] = 0.0
+            return out
+        return query
+
+    return _wrap(interp_u), _wrap(interp_v)
+
+
+def _build_fcoo_interpolators(
+    model_data: xr.Dataset, t_s: np.ndarray,
+    bathy_interp: Optional[Callable[[float, float], float]] = None,
+    float_id: str = "",
+) -> tuple[Callable, Callable]:
     """
     Build combined interp_u/interp_v for the unified 'fcoo' model, which
     carries two grids sharing one time coordinate (see data_handler._fetch_fcoo):
@@ -143,13 +211,20 @@ def _build_fcoo_interpolators(model_data: xr.Dataset, t_s: np.ndarray) -> tuple[
         model_data["u_idk"].values,
         model_data["v_idk"].values,
     )
-    dk_u, dk_v, _ = _grid_interpolators(
+    dk_u, dk_v, dk_bounds = _grid_interpolators(
         t_s,
         model_data["depth_dk"].values.astype(np.float64),
         model_data["lat_dk"].values.astype(np.float64),
         model_data["lon_dk"].values.astype(np.float64),
         model_data["u_dk"].values,
         model_data["v_dk"].values,
+    )
+    # idk itself never needs tapering: _in_idk_bounds (below) already
+    # redirects any query outside idk's own 50m range to dk before it would
+    # hit idk's limit -- the taper only becomes relevant once dk's deeper
+    # range is also exceeded.
+    dk_u, dk_v = _taper_to_seabed(
+        dk_u, dk_v, dk_bounds[0][1], bathy_interp, f"{float_id} fcoo_dk".strip()
     )
     (z0, z1), (lat0, lat1), (lon0, lon1) = idk_bounds
 
@@ -173,7 +248,11 @@ def _build_fcoo_interpolators(model_data: xr.Dataset, t_s: np.ndarray) -> tuple[
     return combined_u, combined_v
 
 
-def build_interpolators(model_data: xr.Dataset) -> tuple[Callable, Callable]:
+def build_interpolators(
+    model_data: xr.Dataset,
+    bathy_interp: Optional[Callable[[float, float], float]] = None,
+    float_id: str = "",
+) -> tuple[Callable, Callable]:
     """
     Build interp_u / interp_v callables from `model_data`.
 
@@ -187,13 +266,17 @@ def build_interpolators(model_data: xr.Dataset) -> tuple[Callable, Callable]:
     interpolator pair (idk preferred, dk fallback; see _build_fcoo_interpolators).
 
     Each callable takes a 2-D array of [t_s, depth_m, lat, lon] rows
-    and returns one float per row.  Out-of-bounds queries return 0.0
-    (open-ocean boundary -- callers treat NaN/missing as no current).
+    and returns one float per row. Out-of-bounds *lat/lon* queries return
+    0.0 (open-ocean boundary -- callers treat NaN/missing as no current).
+    Out-of-range *depth* queries deeper than the grid's own real levels are
+    tapered toward the local seabed instead (see _taper_to_seabed) if
+    `bathy_interp` is given, otherwise also return 0.0. `float_id` is only
+    used to label that taper's log warning.
     """
     t_s = model_data["time"].values.astype("datetime64[s]").astype(np.float64)
 
     if "u_dk" in model_data.data_vars:
-        return _build_fcoo_interpolators(model_data, t_s)
+        return _build_fcoo_interpolators(model_data, t_s, bathy_interp, float_id)
 
     depth = model_data["depth"].values.astype(np.float64)
     lat   = model_data["lat"].values.astype(np.float64)
@@ -201,7 +284,10 @@ def build_interpolators(model_data: xr.Dataset) -> tuple[Callable, Callable]:
     u_arr = model_data["u"].values
     v_arr = model_data["v"].values
 
-    interp_u, interp_v, _ = _grid_interpolators(t_s, depth, lat, lon, u_arr, v_arr)
+    interp_u, interp_v, bounds = _grid_interpolators(t_s, depth, lat, lon, u_arr, v_arr)
+    interp_u, interp_v = _taper_to_seabed(
+        interp_u, interp_v, bounds[0][1], bathy_interp, f"{float_id} cmems".strip()
+    )
     return interp_u, interp_v
 
 
@@ -276,10 +362,18 @@ def simulate_cycle(
     tip_time: datetime,
     until_time: datetime,
     dt: float = 3600.0,
+    bathy_interp: Optional[Callable[[float, float], float]] = None,
+    float_id: str = "",
 ) -> list[tuple[datetime, float, float]]:
     """
     Extend a trajectory forward from `tip_time` to `until_time`, using
     `model_data`'s currents and `control_action`'s dive profile.
+
+    bathy_interp: optional (lat, lon) -> seabed depth callable, forwarded to
+        build_interpolators so queries deeper than a grid's real depth range
+        taper toward the seabed instead of hard zero-filling (see
+        _taper_to_seabed). float_id is only used to label that taper's log
+        warning. Both default to the old zero-fill behavior if omitted.
 
     anchor_lat/anchor_lon/anchor_time: the float's last confirmed real
         surfacing. Defines (x=0, y=0) and cycle-phase zero for every repeat
@@ -313,7 +407,7 @@ def simulate_cycle(
     parking_s = max(descent_plus_parking_s - descent_s, 0.0)
     total_cycle_s = descent_plus_parking_s + ascent_s + transmission_s
 
-    interp_u, interp_v = build_interpolators(model_data)
+    interp_u, interp_v = build_interpolators(model_data, bathy_interp=bathy_interp, float_id=float_id)
 
     x, y = latlon_to_xy(tip_lat, tip_lon, anchor_lat, anchor_lon)
     elapsed = (tip_time - anchor_time).total_seconds()
