@@ -20,6 +20,15 @@ one fix and one addition:
       float's full history, with the 5-day-bottom-park fallback for floats
       with no usable history at all.
 
+    - Fix: each cycle's "last_lat"/"last_lon" (its own surfacing position --
+      what run.py uses to seed surfacing_history/last_real_position, the
+      ground truth every model is scored against) used to be a raw scan for
+      the last non-NaN LATITUDE/LONGITUDE anywhere in that cycle's Rtraj
+      block. That's exactly the raw-.traj GPS fix your notebook flagged as
+      occasionally erroneous (a pre-GPS-lock fix). Now it reuses the same
+      QC'd profiles-file position (profile_pos, with _robust_start_pos
+      fallback) already computed as start_lat/start_lon for that cycle.
+
 This module is pure computation -- no fetching, no store I/O. run.py calls
 data_handler.download_float_history() to get rtraj_path, then this module
 to turn it into a ControlAction.
@@ -171,11 +180,11 @@ def extract_cycles(rtraj_path: Path, bathy_interp: Callable) -> list[dict]:
             if start_lat is None:
                 continue
 
-        all_lats = cyc_ds.LATITUDE.values.astype(float)
-        all_lons = cyc_ds.LONGITUDE.values.astype(float)
-        pos_mask = ~np.isnan(all_lats) & ~np.isnan(all_lons)
-        last_lat = float(all_lats[pos_mask][-1]) if pos_mask.any() else start_lat
-        last_lon = float(all_lons[pos_mask][-1]) if pos_mask.any() else start_lon
+        # This cycle's own surfacing position is the same QC'd profile
+        # position used above as start_lat/start_lon -- not a raw scan for
+        # the last non-NaN GPS fix in the cycle's Rtraj block, which can
+        # pick up a bad pre-GPS-lock fix (see _robust_start_pos docstring).
+        last_lat, last_lon = start_lat, start_lon
 
         pres = park_ds.PRES.values.astype(float)
         pres = pres[~np.isnan(pres)]
