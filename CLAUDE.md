@@ -73,10 +73,18 @@ ControlAction:
 **`ArgoPull`** (`data_handler.py`) -- one float's state in a single domain pull:
 `float_id`, `last_position`, `last_time`, `traj_path`.
 
-**Storage** (`float_store.py`): parquet, two tables in `STORE_DIR`:
-`floats_meta.parquet` (scalar per-float fields) and `trajectories.parquet`
-(long format: `float_id, model, t, lat, lon`). `error_db` is a third table,
-`errors.parquet`: `float_id, model, t, error_m`.
+**Storage** (`float_store.py`): parquet, six tables in `STORE_DIR`:
+`floats_meta.parquet` (scalar per-float fields), `trajectories.parquet`
+(long format: `float_id, model, t, lat, lon`), `surfacings.parquet` (real
+confirmed surfacing history, long format: `float_id, t, lat, lon`),
+`errors.parquet` (`error_db`: `float_id, model, t, error_m, drift_m,
+real_lat, real_lon, predicted_lat, predicted_lon`), `forecast_history.parquet`
+(one row per float/model/pipeline-run predicted next surfacing, see
+`run._extend_trajectories`), and `cycle_action_history.parquet` (one row per
+float/pipeline-run re-derived `cycle_action`, see `run._refresh_cycle_actions`
+and design decision 9 below). All six are missing-file-tolerant on load
+(`float_store.load_*` returns an empty/correctly-columned result rather than
+erroring) and whole-frame-overwritten on save.
 
 ## Design decisions worth knowing before you touch this code
 
@@ -136,12 +144,24 @@ silently violate them.
    different failure modes that happen to look similar (a frozen
    trajectory sitting around for a while). Don't conflate them.
 
-9. **`cycle_action` is mode-voted across a float's full `.traj` history**
-   on first registration (`cycle_extractor.mode_vote_action`): `park_mode`
-   by majority vote, everything else by mean. A float with fewer than 2
-   usable historical cycles gets `default_action()` instead (5-day
-   bottom-park fallback) rather than attempting to vote on insufficient
-   data.
+9. **`cycle_action` is mode-voted across a float's full `.traj` history,
+   every run, not just at registration** (`run._derive_cycle_action`, called
+   from both `_build_new_float_row` and `run._refresh_cycle_actions`):
+   `park_mode` by majority vote, everything else by mean. A float with
+   fewer than 2 usable historical cycles gets `default_action()` instead
+   (5-day bottom-park fallback) rather than attempting to vote on
+   insufficient data. `_refresh_cycle_actions` re-fetches `Rtraj.nc` fresh
+   (`force_refresh=True`) every run before re-voting, since GDAC's Rtraj.nc
+   grows in place as a float completes new real cycles -- a cached copy
+   would otherwise freeze the estimate at whatever was known the first time
+   the float was ever seen. A failed refresh keeps the float's *previous*
+   `cycle_action` rather than falling back to `default_action()` -- that
+   fallback only makes sense at registration, where there's no previous
+   estimate to protect. Every run's derived action (whether it changed or
+   not) is appended to `cycle_action_history.parquet`
+   (`float_store.save_cycle_action_history`) so how the estimate evolves
+   over time can be inspected later; a change from the previous run also
+   gets a `logger.info` line.
 
 10. **No EKF, no covariance, no process noise, no bias state, anywhere in
     this codebase.** `simulate_cycle` is deterministic position-only

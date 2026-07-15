@@ -159,6 +159,27 @@ def load_forecast_history(store_dir: Path) -> pd.DataFrame:
     return pd.read_parquet(p)
 
 
+def load_cycle_action_history(store_dir: Path) -> pd.DataFrame:
+    """
+    Read cycle_action_history.parquet -- one row per (float, pipeline run)
+    recording that run's re-derived ControlAction estimate (park_mode,
+    cycle_hours, etc, mode-voted across the float's full real cycle history
+    as of that run -- see run._refresh_cycle_actions), so you can see how
+    the estimate evolved as more real cycles accumulated, not just its
+    current value. `changed` is True if this row's action differs from the
+    previous one for that float. Returns empty DataFrame with correct
+    columns if absent.
+    """
+    p = Path(store_dir) / "cycle_action_history.parquet"
+    if not p.exists():
+        return pd.DataFrame(columns=[
+            "float_id", "logged_at", "park_mode", "cycle_hours",
+            "transmission_duration_minutes", "target_depth",
+            "descent_speed_ms", "ascent_speed_ms", "changed",
+        ])
+    return pd.read_parquet(p)
+
+
 # --------------------------------------------------------------------------- #
 # Save
 # --------------------------------------------------------------------------- #
@@ -220,6 +241,13 @@ def save_forecast_history(store_dir: Path, forecast_history_db: pd.DataFrame) ->
     store_dir = Path(store_dir)
     store_dir.mkdir(parents=True, exist_ok=True)
     forecast_history_db.to_parquet(store_dir / "forecast_history.parquet", index=False)
+
+
+def save_cycle_action_history(store_dir: Path, cycle_action_history_db: pd.DataFrame) -> None:
+    """Write cycle_action_history_db to cycle_action_history.parquet (whole-frame overwrite)."""
+    store_dir = Path(store_dir)
+    store_dir.mkdir(parents=True, exist_ok=True)
+    cycle_action_history_db.to_parquet(store_dir / "cycle_action_history.parquet", index=False)
 
 
 # --------------------------------------------------------------------------- #

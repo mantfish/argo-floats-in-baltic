@@ -34,6 +34,7 @@ import pandas as pd
 from . import cycle_extractor, data_handler, float_store, simulate, web_export
 from .data_handler import ArgoPull, Region
 from .float_store import FloatRow, ModelTrack
+from .simulate import ControlAction
 
 logger = logging.getLogger(__name__)
 
@@ -89,8 +90,16 @@ def run(config_path: Path | None = None) -> None:
     floats_db = float_store.load_floats_db(STORE_DIR)
     error_db = float_store.load_error_db(STORE_DIR)
     forecast_history_db = float_store.load_forecast_history(STORE_DIR)
+    cycle_action_history_db = float_store.load_cycle_action_history(STORE_DIR)
 
     _backfill_surfacing_history(floats_db)
+
+    cycle_action_rows = _refresh_cycle_actions(floats_db)
+    if cycle_action_rows:
+        cycle_action_history_db = pd.concat(
+            [cycle_action_history_db, pd.DataFrame(cycle_action_rows)], ignore_index=True
+        )
+
     forecast_rows = _extend_trajectories(floats_db)
     if forecast_rows:
         forecast_history_db = pd.concat(
@@ -104,6 +113,7 @@ def run(config_path: Path | None = None) -> None:
     float_store.save_floats_db(STORE_DIR, floats_db)
     float_store.save_error_db(STORE_DIR, error_db)
     float_store.save_forecast_history(STORE_DIR, forecast_history_db)
+    float_store.save_cycle_action_history(STORE_DIR, cycle_action_history_db)
 
     now = datetime.utcnow()
     web_export.export_floats(floats_db, error_db, now)
@@ -312,13 +322,43 @@ def _register_new_floats(floats_db: dict[str, FloatRow], argo_now: dict[str, Arg
             logger.warning("Could not register float %s -- will retry next run", float_id, exc_info=True)
 
 
+def _derive_cycle_action(float_id: str) -> tuple[ControlAction, list[dict]]:
+    """
+    Re-derive a float's representative ControlAction (park_mode, cycle_hours,
+    etc) by mode-voting across its full real cycle history, and return the
+    raw per-cycle list alongside it (registration also needs the cycles list
+    itself, for surfacing_history/last_real_position bootstrapping).
+
+    Always re-downloads Rtraj.nc (force_refresh=True) rather than trusting
+    whatever's cached -- GDAC's Rtraj.nc grows in place as a float completes
+    new real cycles, so a cached copy from this float's first registration
+    would freeze the estimate at however little history existed back then.
+    Called both at registration and every run thereafter
+    (_refresh_cycle_actions) so the estimate keeps improving as more real
+    cycles accumulate, not just once.
+
+    Raises on genuine fetch/parse failure -- callers decide how to handle
+    that (registration falls back to default_action(); a periodic refresh
+    should keep the float's previous estimate rather than reset it).
+    """
+    rtraj_path = data_handler.download_float_history(
+        float_id, cache_dir=ARGO_CACHE_DIR, force_refresh=True,
+    )
+    cycles = cycle_extractor.extract_cycles(rtraj_path, bathy_interp=_bathy_interp)
+    if len(cycles) >= 2:
+        actions = cycle_extractor.build_actions(cycles)
+        action = cycle_extractor.mode_vote_action(actions)
+    else:
+        action = cycle_extractor.default_action()
+    return action, cycles
+
+
 def _build_new_float_row(float_id: str, pull: ArgoPull) -> FloatRow:
     try:
-        rtraj_path = data_handler.download_float_history(float_id, cache_dir=ARGO_CACHE_DIR)
-        cycles = cycle_extractor.extract_cycles(rtraj_path, bathy_interp=_bathy_interp)
+        cycle_action, cycles = _derive_cycle_action(float_id)
     except Exception:
         logger.warning("History download failed for %s, using default action", float_id, exc_info=True)
-        cycles = []
+        cycle_action, cycles = cycle_extractor.default_action(), []
 
     surfacing_history = [
         (float(c["last_lat"]), float(c["last_lon"]), datetime.fromisoformat(c["end_time"]))
@@ -326,12 +366,9 @@ def _build_new_float_row(float_id: str, pull: ArgoPull) -> FloatRow:
     ]
 
     if len(cycles) >= 2:
-        actions = cycle_extractor.build_actions(cycles)
-        cycle_action = cycle_extractor.mode_vote_action(actions)
         last_lat, last_lon = cycles[-1]["last_lat"], cycles[-1]["last_lon"]
         last_time = datetime.fromisoformat(cycles[-1]["end_time"])
     else:
-        cycle_action = cycle_extractor.default_action()
         last_lat, last_lon = pull.last_position
         last_time = pull.last_time
 
@@ -344,6 +381,88 @@ def _build_new_float_row(float_id: str, pull: ArgoPull) -> FloatRow:
         models={m: ModelTrack(trajectory=[(last_time, last_lat, last_lon)]) for m in MODELS},
         surfacing_history=surfacing_history,
     )
+
+
+# --------------------------------------------------------------------------- #
+# Loop 4: refresh cycle_action estimates
+# --------------------------------------------------------------------------- #
+
+_CYCLE_ACTION_CHANGE_THRESHOLDS = dict(
+    cycle_hours=0.5, target_depth=1.0, descent_speed_ms=0.005, ascent_speed_ms=0.005,
+)
+
+
+def _cycle_action_changed(old: ControlAction, new: ControlAction) -> bool:
+    if old.park_mode != new.park_mode:
+        return True
+    for field, thresh in _CYCLE_ACTION_CHANGE_THRESHOLDS.items():
+        old_v, new_v = getattr(old, field), getattr(new, field)
+        if (old_v is None) != (new_v is None):
+            return True
+        if old_v is not None and abs(old_v - new_v) > thresh:
+            return True
+    return False
+
+
+def _refresh_cycle_actions(floats_db: dict[str, FloatRow]) -> list[dict]:
+    """
+    Re-derive every alive float's cycle_action from its full, freshly
+    re-fetched real cycle history -- every run, not just at registration --
+    so the estimate keeps improving as more real cycles accumulate rather
+    than staying frozen at whatever was known when the float was first seen.
+
+    Runs before _extend_trajectories so this run's own simulation already
+    uses the freshest estimate, not last run's.
+
+    Logs a line when a float's action actually changes (park_mode or any
+    numeric field beyond a small tolerance) -- not every run, to avoid
+    spamming identical values. Returns one cycle_action_history row per
+    float successfully (re)computed this run regardless of whether it
+    changed, for save_cycle_action_history to persist the full timeline.
+    A failed refresh (network/parse error) keeps that float's previous
+    cycle_action untouched rather than resetting it to default_action() --
+    unlike registration, an established float shouldn't lose a good
+    estimate over one transient fetch failure.
+    """
+    now = datetime.utcnow()
+    log_rows: list[dict] = []
+
+    for row in floats_db.values():
+        if row.is_dead:
+            continue
+        try:
+            new_action, _ = _derive_cycle_action(row.float_id)
+        except Exception:
+            logger.warning(
+                "Could not refresh cycle_action for %s -- keeping previous estimate",
+                row.float_id, exc_info=True,
+            )
+            continue
+
+        changed = _cycle_action_changed(row.cycle_action, new_action)
+        if changed:
+            logger.info(
+                "Float %s cycle_action changed: park_mode %s -> %s, cycle_hours %.1f -> %.1f, "
+                "target_depth %s -> %s",
+                row.float_id, row.cycle_action.park_mode, new_action.park_mode,
+                row.cycle_action.cycle_hours, new_action.cycle_hours,
+                row.cycle_action.target_depth, new_action.target_depth,
+            )
+        row.cycle_action = new_action
+
+        log_rows.append({
+            "float_id": row.float_id,
+            "logged_at": now,
+            "park_mode": new_action.park_mode,
+            "cycle_hours": new_action.cycle_hours,
+            "transmission_duration_minutes": new_action.transmission_duration_minutes,
+            "target_depth": new_action.target_depth,
+            "descent_speed_ms": new_action.descent_speed_ms,
+            "ascent_speed_ms": new_action.ascent_speed_ms,
+            "changed": changed,
+        })
+
+    return log_rows
 
 
 def _backfill_surfacing_history(floats_db: dict[str, FloatRow]) -> None:

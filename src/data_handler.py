@@ -237,7 +237,16 @@ _fcoo_ds_cache: dict[str, xr.Dataset] = {}
 # to hit the silent-corruption failure mode far more often at the same chunk
 # size -- smaller chunks make each individual request less likely to trigger it.
 _FCOO_TIME_CHUNK = {"dk": 8, "idk": 3}
-_FCOO_LOAD_MAX_RETRIES = 5
+
+# The corruption itself is a genuine, confirmed-intermittent upstream
+# pydap/OPeNDAP server issue (reproduced live: identical requests fail then
+# succeed then fail again, no correlation found with request size, caching,
+# or time-of-day) -- retrying with a fresh connection is the right response,
+# it just needs enough attempts/time to outlast a bad window. 5 attempts
+# (~165s of backoff) wasn't always enough; 8 attempts with backoff capped at
+# 60s (~330s total) gives a longer runway without any one retry ballooning.
+_FCOO_LOAD_MAX_RETRIES = 8
+_FCOO_LOAD_BACKOFF_CAP_S = 60
 
 
 def _list_getm_files() -> list[str]:
@@ -324,7 +333,7 @@ def _load_fcoo_var_chunked(url: str, var_name: str, sel: dict, n_time: int, chun
                     "FCOO %s t[%d:%d] attempt %d/%d raised %s",
                     var_name, t0, t1, attempt + 1, _FCOO_LOAD_MAX_RETRIES, exc,
                 )
-                time.sleep(5 * 2 ** attempt)
+                time.sleep(min(5 * 2 ** attempt, _FCOO_LOAD_BACKOFF_CAP_S))
                 continue
 
             if _looks_valid(arr):
@@ -337,7 +346,7 @@ def _load_fcoo_var_chunked(url: str, var_name: str, sel: dict, n_time: int, chun
                 "with a fresh connection",
                 var_name, t0, t1, attempt + 1, _FCOO_LOAD_MAX_RETRIES,
             )
-            time.sleep(5 * 2 ** attempt)
+            time.sleep(min(5 * 2 ** attempt, _FCOO_LOAD_BACKOFF_CAP_S))
         else:
             raise RuntimeError(
                 f"FCOO {var_name} t[{t0}:{t1}]: repeatedly got invalid data from {url}"
@@ -508,16 +517,23 @@ def download_argo_floats_in_domain(region: Region) -> dict[str, ArgoPull]:
 def download_float_history(
     float_id: str,
     cache_dir: Path = ARGO_CACHE_DIR,
+    force_refresh: bool = False,
 ) -> Path:
     """
     Download Rtraj.nc (and _prof.nc) for float_id from the GDAC HTTP mirror.
-    Returns local Rtraj.nc path; files are cached.
+    Returns local Rtraj.nc path; files are cached by default.
+
+    force_refresh=True re-downloads even if a local copy already exists.
+    GDAC's Rtraj.nc grows in place as a float completes new real cycles --
+    callers that want an up-to-date cycle_action estimate (not just whatever
+    was true the first time this float was ever seen) need force_refresh so
+    the cache doesn't silently freeze the history at its earliest snapshot.
     """
     cache_dir  = Path(cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
     rtraj_path = cache_dir / f"{float_id}_Rtraj.nc"
 
-    if rtraj_path.exists():
+    if rtraj_path.exists() and not force_refresh:
         return rtraj_path
 
     dac      = _find_dac(float_id)
@@ -526,7 +542,7 @@ def download_float_history(
     for fname in (f"{float_id}_Rtraj.nc", f"{float_id}_prof.nc"):
         url   = f"{base_url}/{fname}"
         local = cache_dir / fname
-        if local.exists():
+        if local.exists() and not force_refresh:
             continue
         for attempt in range(2):
             try:
