@@ -532,8 +532,13 @@ def download_float_history(
     cache_dir  = Path(cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
     rtraj_path = cache_dir / f"{float_id}_Rtraj.nc"
+    prof_path  = cache_dir / f"{float_id}_prof.nc"
 
-    if rtraj_path.exists() and not force_refresh:
+    # Both files must already be cached to skip fetching -- Rtraj.nc alone
+    # existing (e.g. from an interrupted earlier fetch) used to short-circuit
+    # here and silently never attempt prof.nc, leaving cycle_extractor stuck
+    # on its raw-fix fallback for that float indefinitely.
+    if rtraj_path.exists() and prof_path.exists() and not force_refresh:
         return rtraj_path
 
     dac      = _find_dac(float_id)
