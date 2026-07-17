@@ -41,16 +41,20 @@ MODEL_COLOR = {
 
 def _build_scoring_history(error_db: pd.DataFrame) -> dict[str, list[dict]]:
     """
-    {float_id: [{t, real: {lat,lon}, predictions: {model: {lat,lon,error_km}}}]}
+    {float_id: [{t, real: {lat,lon}, leg_start: {lat,lon}|None,
+                 predictions: {model: {lat,lon,error_km}}}]}
 
     One entry per past confirmed surfacing that was actually scored (i.e. not
     excluded by the overdue rule) -- real_lat/real_lon/predicted_lat/
-    predicted_lon are set alongside error_m/drift_m in run.py's
-    _reconcile_with_argo at the moment of scoring, since that's the only
-    place both the real position and each model's trajectory lookup at that
-    exact timestamp are available together (models[model].trajectory gets
-    reset to a single point on every anchor reset, so this can't be
-    reconstructed later from floats_db alone).
+    predicted_lon/leg_start_lat/leg_start_lon are set alongside
+    error_m/drift_m in run.py's _reconcile_with_argo at the moment of
+    scoring, since that's the only place the real position, each model's
+    trajectory lookup at that exact timestamp, and the anchor the leg
+    actually started from are all available together (models[model].trajectory
+    gets reset to a single point on every anchor reset, and surfacing_history
+    is QC'd-profile-derived -- denser than the true anchor-reset sequence --
+    so neither can reconstruct leg_start after the fact). leg_start is None
+    for rows saved before this field was tracked.
     """
     by_float: dict[str, list[dict]] = {}
     if error_db.empty or "predicted_lat" not in error_db.columns:
@@ -74,9 +78,16 @@ def _build_scoring_history(error_db: pd.DataFrame) -> dict[str, list[dict]]:
             }
         if not predictions:
             continue
+        leg_start_lat = first.get("leg_start_lat")
+        leg_start_lon = first.get("leg_start_lon")
+        leg_start = (
+            {"lat": round(float(leg_start_lat), 5), "lon": round(float(leg_start_lon), 5)}
+            if pd.notna(leg_start_lat) and pd.notna(leg_start_lon) else None
+        )
         by_float.setdefault(str(float_id), []).append({
             "t": t.isoformat(),
             "real": {"lat": round(float(first["real_lat"]), 5), "lon": round(float(first["real_lon"]), 5)},
+            "leg_start": leg_start,
             "predictions": predictions,
         })
 

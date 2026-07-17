@@ -289,6 +289,11 @@ def _reconcile_with_argo(
                         "error_m": error_m, "drift_m": drift_m,
                         "real_lat": real_lat, "real_lon": real_lon,
                         "predicted_lat": predicted[0], "predicted_lon": predicted[1],
+                        # The exact anchor this cycle's forecast leg started from --
+                        # not reconstructable later from surfacing_history, which is
+                        # QC'd-profile-derived and denser than the actual sparse
+                        # sequence of anchor resets (see map.html's use of this field).
+                        "leg_start_lat": prev_lat, "leg_start_lon": prev_lon,
                     })
         # else: excluded from error_db per the 10-day rule -- still reset
         # below regardless: "if we get a new ping, great, we start from 0 again."

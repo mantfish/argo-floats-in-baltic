@@ -138,6 +138,7 @@ def load_error_db(store_dir: Path) -> pd.DataFrame:
         return pd.DataFrame(columns=[
             "float_id", "model", "t", "error_m", "drift_m",
             "real_lat", "real_lon", "predicted_lat", "predicted_lon",
+            "leg_start_lat", "leg_start_lon",
         ])
     return pd.read_parquet(p)
 
