@@ -97,6 +97,7 @@ def run(config_path: Path | None = None) -> None:
     error_db = float_store.load_error_db(STORE_DIR)
     forecast_history_db = float_store.load_forecast_history(STORE_DIR)
     cycle_action_history_db = float_store.load_cycle_action_history(STORE_DIR)
+    leg_history_db = float_store.load_leg_history(STORE_DIR)
 
     _backfill_surfacing_history(floats_db)
 
@@ -113,16 +114,21 @@ def run(config_path: Path | None = None) -> None:
         )
 
     argo_now = data_handler.download_argo_floats_in_domain(REGION)
-    error_db = _reconcile_with_argo(floats_db, argo_now, error_db)
+    error_db, leg_history_rows = _reconcile_with_argo(floats_db, argo_now, error_db)
+    if leg_history_rows:
+        leg_history_db = pd.concat(
+            [leg_history_db, pd.DataFrame(leg_history_rows)], ignore_index=True
+        )
     _register_new_floats(floats_db, argo_now)
 
     float_store.save_floats_db(STORE_DIR, floats_db)
     float_store.save_error_db(STORE_DIR, error_db)
     float_store.save_forecast_history(STORE_DIR, forecast_history_db)
     float_store.save_cycle_action_history(STORE_DIR, cycle_action_history_db)
+    float_store.save_leg_history(STORE_DIR, leg_history_db)
 
     now = datetime.utcnow()
-    web_export.export_floats(floats_db, error_db, now)
+    web_export.export_floats(floats_db, error_db, leg_history_db, now)
     web_export.export_leaderboard(error_db)
 
 
@@ -286,12 +292,23 @@ def _reconcile_with_argo(
     floats_db: dict[str, FloatRow],
     argo_now: dict[str, ArgoPull],
     error_db: pd.DataFrame,
-) -> pd.DataFrame:
+) -> tuple[pd.DataFrame, list[dict]]:
     """
-    Returns the updated error_db. pd.concat does not mutate in place, so the
-    caller must reassign -- run() does `error_db = _reconcile_with_argo(...)`.
+    Returns (updated error_db, leg_history_rows). pd.concat does not mutate
+    in place, so the caller must reassign -- run() does
+    `error_db, leg_history_rows = _reconcile_with_argo(...)`.
+
+    leg_history_rows is every point of every model's trajectory that's about
+    to be discarded by this call's anchor resets (see below) -- the full
+    simulated path a completed forecast leg actually took, captured here
+    because this is the only moment it still exists before design decision
+    5's reset wipes it down to a single point. Points strictly after
+    real_time are dropped (the trajectory tip usually runs ahead of "now",
+    per design decision 3, so whatever it had already simulated past the
+    real surfacing never corresponded to anything real).
     """
     new_rows: list[dict] = []
+    leg_history_rows: list[dict] = []
 
     for float_id, row in floats_db.items():
         if row.is_dead:
@@ -357,6 +374,12 @@ def _reconcile_with_argo(
         for model in MODELS:
             if model not in row.models:
                 continue
+            for t, lat, lon in row.models[model].trajectory:
+                if t <= real_time:
+                    leg_history_rows.append({
+                        "float_id": float_id, "model": model, "leg_end_time": real_time,
+                        "t": t, "lat": lat, "lon": lon,
+                    })
             row.models[model].trajectory = [(real_time, real_lat, real_lon)]
             # missed_model_pulls intentionally NOT reset here -- it tracks model-feed
             # staleness and should only clear when model data actually arrives in
@@ -364,7 +387,7 @@ def _reconcile_with_argo(
 
     if new_rows:
         error_db = pd.concat([error_db, pd.DataFrame(new_rows)], ignore_index=True)
-    return error_db
+    return error_db, leg_history_rows
 
 
 # --------------------------------------------------------------------------- #

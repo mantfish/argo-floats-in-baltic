@@ -39,10 +39,34 @@ MODEL_COLOR = {
 }
 
 
-def _build_scoring_history(error_db: pd.DataFrame) -> dict[str, list[dict]]:
+def _build_leg_paths(leg_history_db: pd.DataFrame) -> dict[tuple[str, str, pd.Timestamp], list[list[float]]]:
+    """
+    (float_id, model, leg_end_time) -> [[lat,lon], ...] in time order --
+    the actual simulated path a completed forecast leg took, captured by
+    run._reconcile_with_argo right before it was discarded on an anchor
+    reset. Only exists for legs that completed after leg_history.parquet was
+    introduced; older legs have no entry here, so callers fall back to a
+    straight line between leg_start and the predicted position.
+    """
+    if leg_history_db.empty:
+        return {}
+    lhd = leg_history_db.copy()
+    lhd["leg_end_time"] = pd.to_datetime(lhd["leg_end_time"])
+    lhd["t"] = pd.to_datetime(lhd["t"])
+    paths: dict[tuple[str, str, pd.Timestamp], list[list[float]]] = {}
+    for (float_id, model, leg_end_time), grp in lhd.groupby(["float_id", "model", "leg_end_time"]):
+        grp = grp.sort_values("t")
+        paths[(str(float_id), str(model), leg_end_time)] = [
+            [round(float(lat), 5), round(float(lon), 5)]
+            for lat, lon in zip(grp["lat"], grp["lon"])
+        ]
+    return paths
+
+
+def _build_scoring_history(error_db: pd.DataFrame, leg_history_db: pd.DataFrame) -> dict[str, list[dict]]:
     """
     {float_id: [{t, real: {lat,lon}, leg_start: {lat,lon}|None,
-                 predictions: {model: {lat,lon,error_km}}}]}
+                 predictions: {model: {lat,lon,error_km,path: [[lat,lon],...]|None}}}]}
 
     One entry per past confirmed surfacing that was actually scored (i.e. not
     excluded by the overdue rule) -- real_lat/real_lon/predicted_lat/
@@ -54,11 +78,14 @@ def _build_scoring_history(error_db: pd.DataFrame) -> dict[str, list[dict]]:
     gets reset to a single point on every anchor reset, and surfacing_history
     is QC'd-profile-derived -- denser than the true anchor-reset sequence --
     so neither can reconstruct leg_start after the fact). leg_start is None
-    for rows saved before this field was tracked.
+    for rows saved before this field was tracked; likewise path is None
+    where leg_history has no matching leg (see _build_leg_paths).
     """
     by_float: dict[str, list[dict]] = {}
     if error_db.empty or "predicted_lat" not in error_db.columns:
         return by_float
+
+    leg_paths = _build_leg_paths(leg_history_db)
 
     edb = error_db.copy()
     edb["t"] = pd.to_datetime(edb["t"])
@@ -71,10 +98,12 @@ def _build_scoring_history(error_db: pd.DataFrame) -> dict[str, list[dict]]:
         for _, r in grp.iterrows():
             if pd.isna(r.get("predicted_lat")):
                 continue
-            predictions[str(r["model"])] = {
+            model = str(r["model"])
+            predictions[model] = {
                 "lat": round(float(r["predicted_lat"]), 5),
                 "lon": round(float(r["predicted_lon"]), 5),
                 "error_km": _round(r["error_m"] / 1000.0),
+                "path": leg_paths.get((str(float_id), model, t)),
             }
         if not predictions:
             continue
@@ -96,18 +125,24 @@ def _build_scoring_history(error_db: pd.DataFrame) -> dict[str, list[dict]]:
     return by_float
 
 
-def export_floats(floats_db: dict[str, FloatRow], error_db: pd.DataFrame, now: datetime) -> list[dict]:
+def export_floats(
+    floats_db: dict[str, FloatRow],
+    error_db: pd.DataFrame,
+    leg_history_db: pd.DataFrame,
+    now: datetime,
+) -> list[dict]:
     """
     Build floats.json: per-float current predictions, next-surfacing estimates,
     recent trajectory history for each model, and past scoring history (real
-    vs. each model's predicted position at each past surfacing -- what the
+    vs. each model's predicted position at each past surfacing, plus the
+    actual simulated path for that leg where leg_history has it -- what the
     map draws error lines from).
 
     `now` is the reference time for "predicted_now" lookups and is embedded in
     the output so the frontend can show data age.
     """
     cutoff = now - timedelta(days=HISTORY_DAYS)
-    scoring_by_float = _build_scoring_history(error_db)
+    scoring_by_float = _build_scoring_history(error_db, leg_history_db)
     floats_out: list[dict] = []
 
     for float_id, row in floats_db.items():

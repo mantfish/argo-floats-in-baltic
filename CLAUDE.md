@@ -73,16 +73,22 @@ ControlAction:
 **`ArgoPull`** (`data_handler.py`) -- one float's state in a single domain pull:
 `float_id`, `last_position`, `last_time`, `traj_path`.
 
-**Storage** (`float_store.py`): parquet, six tables in `STORE_DIR`:
+**Storage** (`float_store.py`): parquet, seven tables in `STORE_DIR`:
 `floats_meta.parquet` (scalar per-float fields), `trajectories.parquet`
 (long format: `float_id, model, t, lat, lon`), `surfacings.parquet` (real
 confirmed surfacing history, long format: `float_id, t, lat, lon`),
 `errors.parquet` (`error_db`: `float_id, model, t, error_m, drift_m,
-real_lat, real_lon, predicted_lat, predicted_lon`), `forecast_history.parquet`
+real_lat, real_lon, predicted_lat, predicted_lon, leg_start_lat,
+leg_start_lon`), `forecast_history.parquet`
 (one row per float/model/pipeline-run predicted next surfacing, see
-`run._extend_trajectories`), and `cycle_action_history.parquet` (one row per
+`run._extend_trajectories`), `cycle_action_history.parquet` (one row per
 float/pipeline-run re-derived `cycle_action`, see `run._refresh_cycle_actions`
-and design decision 9 below). All six are missing-file-tolerant on load
+and design decision 9 below), and `leg_history.parquet` (long format:
+`float_id, model, leg_end_time, t, lat, lon` -- every point of a completed
+forecast leg's actual simulated path, captured in `run._reconcile_with_argo`
+right before an anchor reset would otherwise discard it; `leg_end_time` is
+the real surfacing time that closed the leg out, joinable against
+`errors.parquet`'s `t`). All seven are missing-file-tolerant on load
 (`float_store.load_*` returns an empty/correctly-columned result rather than
 erroring) and whole-frame-overwritten on save.
 
@@ -123,7 +129,13 @@ silently violate them.
    `simulate_cycle` from elapsed time since that anchor, modulo one full
    cycle duration. This recovery is only correct because of this exact
    reset behavior; if anchor resets ever stop happening at every confirmed
-   surfacing, phase recovery breaks silently.
+   surfacing, phase recovery breaks silently. Immediately before the reset,
+   `_reconcile_with_argo` copies the outgoing trajectory's points (up to and
+   including `real_time`) into `leg_history_rows` -> `leg_history.parquet`,
+   since this is the only moment that completed leg's full simulated path
+   still exists -- purely for later display/audit (`web_export`'s
+   `scoring_history[*].predictions[model].path`, drawn by `map.html`), not
+   read by any live simulation logic.
 
 6. **Freeze-on-gap, not backfill.** If no new model data arrives, or it
    doesn't extend past where a row already is, that row's trajectory is

@@ -360,7 +360,7 @@
       </div>
       <div class="legend-row">
         <div class="legend-line" style="background:#8C8C82;height:2px"></div>
-        <span class="legend-label">Forecast leg (start → predicted)</span>
+        <span class="legend-label">Forecast leg (actual simulated path)</span>
       </div>
       <div class="legend-row">
         <div class="legend-line" style="background:linear-gradient(to right,#8C8C82 40%,transparent 40%);background-size:6px 100%;opacity:0.85"></div>
@@ -603,12 +603,13 @@ function drawFloatOverlays(f) {
 
   // Past scoring events: each model's predicted position at a real surfacing.
   // Two segments per event so it's clear which forecast leg produced which
-  // prediction (trajectory itself isn't kept past an anchor reset -- see
-  // design decision 5 -- so the leg is drawn as a straight line from the
-  // exact anchor it started from, via leg_start from run.py; older rows
-  // saved before that field existed just skip the leg line):
-  //   1. leg line (solid, model color): anchor -> predicted position --
-  //      where this cycle's forecast started and where it ended up.
+  // prediction:
+  //   1. leg line (solid, model color): the actual simulated path for that
+  //      cycle, from pred.path (run.py's leg_history, captured right before
+  //      an anchor reset would otherwise discard it -- only exists for legs
+  //      completed after that capture was added). Falls back to a straight
+  //      line from leg_start (the exact anchor the leg started from) to the
+  //      predicted position for older legs with no captured path.
   //   2. error line (dotted, model color): predicted -> real -- the gap
   //      between forecast and reality.
   const scoring = f.scoring_history || [];
@@ -618,11 +619,12 @@ function drawFloatOverlays(f) {
       const color = MODEL_COLORS[key] || '#8C8C82';
       const name  = MODEL_NAMES[key] || key;
 
-      if (ev.leg_start) {
-        const legLine = L.polyline(
-          [[ev.leg_start.lat, ev.leg_start.lon], [pred.lat, pred.lon]],
-          { color, weight: 2, opacity: 0.6 }
-        );
+      const legPoints = (pred.path && pred.path.length >= 2)
+        ? pred.path
+        : (ev.leg_start ? [[ev.leg_start.lat, ev.leg_start.lon], [pred.lat, pred.lon]] : null);
+
+      if (legPoints) {
+        const legLine = L.polyline(legPoints, { color, weight: 2, opacity: 0.6 });
         legLine.bindTooltip(`${name} forecast leg → ${fmtTime(ev.t)}`, { direction: 'top' });
         legLine.addTo(map);
         overlayLayers.push(legLine);

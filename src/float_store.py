@@ -160,6 +160,24 @@ def load_forecast_history(store_dir: Path) -> pd.DataFrame:
     return pd.read_parquet(p)
 
 
+def load_leg_history(store_dir: Path) -> pd.DataFrame:
+    """
+    Read leg_history.parquet -- the full simulated path of every completed
+    forecast leg, one row per (float, model, cycle) point, up to and
+    including the anchor reset. Captured in run._reconcile_with_argo right
+    before a leg's trajectory is discarded on a real-surfacing reset (design
+    decision 5), since that's the only moment the full path still exists --
+    otherwise only its start/end survive. leg_end_time identifies which leg
+    a point belongs to (the real surfacing time that closed it out), joinable
+    against error_db's/scoring_history's `t`. Returns empty DataFrame with
+    correct columns if absent.
+    """
+    p = Path(store_dir) / "leg_history.parquet"
+    if not p.exists():
+        return pd.DataFrame(columns=["float_id", "model", "leg_end_time", "t", "lat", "lon"])
+    return pd.read_parquet(p)
+
+
 def load_cycle_action_history(store_dir: Path) -> pd.DataFrame:
     """
     Read cycle_action_history.parquet -- one row per (float, pipeline run)
@@ -249,6 +267,13 @@ def save_cycle_action_history(store_dir: Path, cycle_action_history_db: pd.DataF
     store_dir = Path(store_dir)
     store_dir.mkdir(parents=True, exist_ok=True)
     cycle_action_history_db.to_parquet(store_dir / "cycle_action_history.parquet", index=False)
+
+
+def save_leg_history(store_dir: Path, leg_history_db: pd.DataFrame) -> None:
+    """Write leg_history_db to leg_history.parquet (whole-frame overwrite)."""
+    store_dir = Path(store_dir)
+    store_dir.mkdir(parents=True, exist_ok=True)
+    leg_history_db.to_parquet(store_dir / "leg_history.parquet", index=False)
 
 
 # --------------------------------------------------------------------------- #
