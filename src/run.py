@@ -83,6 +83,12 @@ ARGO_CACHE_DIR = Path("data/argo_cache")
 FCOO_CACHE_DIR = Path("data/fcoo_cache")
 REGION         = Region(lat_min=53.5, lat_max=60.0, lon_min=9.0, lon_max=23.0)
 
+# Padding (degrees) around every active float's anchor + current trajectory
+# tip when building each run's model-data fetch box (see _active_bounding_box)
+# -- ~1 degree is roughly 60-110km at these latitudes, comfortably more than
+# a float's typical multi-day drift.
+FETCH_MARGIN_DEG = 1.0
+
 
 def run(config_path: Path | None = None) -> None:
     _build_globals(_load_config(config_path))
@@ -124,6 +130,50 @@ def run(config_path: Path | None = None) -> None:
 # Loop 1: extend simulated trajectories
 # --------------------------------------------------------------------------- #
 
+def _active_bounding_box(floats_db: dict[str, FloatRow], fallback: Region) -> Region:
+    """
+    Tight bounding box around every non-dead float's real anchor and current
+    trajectory tip (across all models), padded by FETCH_MARGIN_DEG and
+    clipped to `fallback`.
+
+    Shrinking the model-data fetch to just where it's actually needed --
+    instead of the full configured REGION every run -- cuts the payload
+    size of every downloaded chunk. FCOO's OPeNDAP corruption was observed
+    live to hit larger requests harder (see _FCOO_TIME_CHUNK's docstring in
+    data_handler.py, and why idk uses smaller time-chunks than dk), so a
+    smaller box is a plausible lever on that even though the chunk count is
+    unchanged.
+
+    Clipped to `fallback` rather than left to grow freely so a float that's
+    genuinely drifted outside the model's intended coverage area still gets
+    correctly excluded by the in-domain check below, instead of the box
+    just silently following it out.
+    """
+    lats: list[float] = []
+    lons: list[float] = []
+    for row in floats_db.values():
+        if row.is_dead:
+            continue
+        lat, lon, _ = row.last_real_position
+        lats.append(lat)
+        lons.append(lon)
+        for track in row.models.values():
+            if track.trajectory:
+                _, tlat, tlon = track.trajectory[-1]
+                lats.append(tlat)
+                lons.append(tlon)
+
+    if not lats:
+        return fallback
+
+    return Region(
+        lat_min=max(fallback.lat_min, min(lats) - FETCH_MARGIN_DEG),
+        lat_max=min(fallback.lat_max, max(lats) + FETCH_MARGIN_DEG),
+        lon_min=max(fallback.lon_min, min(lons) - FETCH_MARGIN_DEG),
+        lon_max=min(fallback.lon_max, max(lons) + FETCH_MARGIN_DEG),
+    )
+
+
 def _extend_trajectories(floats_db: dict[str, FloatRow]) -> list[dict]:
     """
     One model_data fetch per model -- not per float. trim_to_forecast_only
@@ -131,6 +181,9 @@ def _extend_trajectories(floats_db: dict[str, FloatRow]) -> list[dict]:
     tip defines "what this row has already consumed." That's a cheap
     in-memory filter on already-downloaded data, not a second network call,
     so this stays efficient despite the nested loop shape.
+
+    The fetch itself is spatially restricted to _active_bounding_box rather
+    than the full REGION, to shrink the FCOO corruption surface.
 
     Returns one forecast_history row per (float, model) that actually got
     extended this round -- what this run's freshest trajectory predicts for
@@ -141,11 +194,12 @@ def _extend_trajectories(floats_db: dict[str, FloatRow]) -> list[dict]:
     now        = datetime.utcnow()
     fetch_start = now - timedelta(days=1)   # 1-day lookback so no float is gapped
     fetch_end   = now + timedelta(days=5)   # one full max-cycle horizon
+    fetch_region = _active_bounding_box(floats_db, REGION)
     forecast_rows: list[dict] = []
 
     for model in MODELS:
         try:
-            raw = data_handler.download_model_data(model, REGION,
+            raw = data_handler.download_model_data(model, fetch_region,
                                                    issue_time=fetch_start,
                                                    end_time=fetch_end)
         except Exception:
