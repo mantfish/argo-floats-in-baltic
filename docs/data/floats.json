@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-07-18T17:45:40.966189",
+  "updated_at": "2026-07-19T07:29:47.142924",
   "floats": [
     {
       "float_id": "2904032",
@@ -727,7 +727,7 @@
               "lon": 19.01023
             }
           ],
-          "missed_model_pulls": 13
+          "missed_model_pulls": 14
         },
         "cmems": {
           "display_name": "CMEMS Baltic",
@@ -1913,7 +1913,7 @@
               "lon": 19.03393
             }
           ],
-          "missed_model_pulls": 0
+          "missed_model_pulls": 1
         }
       }
     },
@@ -1921,9 +1921,9 @@
       "float_id": "2904044",
       "euro_argo_url": "https://fleetmonitoring.euro-argo.eu/float/2904044",
       "last_real_position": {
-        "lat": 57.09674,
-        "lon": 19.97339,
-        "time": "2026-07-15T02:51:44"
+        "lat": 57.09017,
+        "lon": 19.97362,
+        "time": "2026-07-18T05:33:59"
       },
       "surfacing_history": [
         {
@@ -2150,6 +2150,11 @@
           "lat": 57.09674,
           "lon": 19.97339,
           "time": "2026-07-15T02:51:44"
+        },
+        {
+          "lat": 57.09017,
+          "lon": 19.97362,
+          "time": "2026-07-18T05:33:59"
         }
       ],
       "scoring_history": [
@@ -2214,37 +2219,37 @@
           "display_name": "FCOO GETM",
           "color": "#FF8C42",
           "predicted_now": null,
-          "next_surfacing_time": "2026-07-21T02:46:56.657331",
+          "next_surfacing_time": "2026-07-21T04:59:42.034548",
           "next_surfacing_position": {
-            "lat": 57.09674,
-            "lon": 19.97339
+            "lat": 57.09017,
+            "lon": 19.97362
           },
           "trajectory_history": [
             {
-              "t": "2026-07-15T02:51:44",
-              "lat": 57.09674,
-              "lon": 19.97339
+              "t": "2026-07-18T05:33:59",
+              "lat": 57.09017,
+              "lon": 19.97362
             }
           ],
-          "missed_model_pulls": 13
+          "missed_model_pulls": 14
         },
         "cmems": {
           "display_name": "CMEMS Baltic",
           "color": "#00D4FF",
           "predicted_now": null,
-          "next_surfacing_time": "2026-07-21T02:46:56.657331",
+          "next_surfacing_time": "2026-07-21T04:59:42.034548",
           "next_surfacing_position": {
-            "lat": 57.09674,
-            "lon": 19.97339
+            "lat": 57.09017,
+            "lon": 19.97362
           },
           "trajectory_history": [
             {
-              "t": "2026-07-15T02:51:44",
-              "lat": 57.09674,
-              "lon": 19.97339
+              "t": "2026-07-18T05:33:59",
+              "lat": 57.09017,
+              "lon": 19.97362
             }
           ],
-          "missed_model_pulls": 0
+          "missed_model_pulls": 1
         }
       }
     },
@@ -2953,7 +2958,7 @@
               "lon": 19.30914
             }
           ],
-          "missed_model_pulls": 13
+          "missed_model_pulls": 14
         },
         "cmems": {
           "display_name": "CMEMS Baltic",
@@ -3944,7 +3949,7 @@
               "lon": 19.31209
             }
           ],
-          "missed_model_pulls": 0
+          "missed_model_pulls": 1
         }
       }
     },
@@ -4269,7 +4274,7 @@
               "lon": 20.84573
             }
           ],
-          "missed_model_pulls": 13
+          "missed_model_pulls": 14
         },
         "cmems": {
           "display_name": "CMEMS Baltic",
@@ -6115,7 +6120,7 @@
               "lon": 20.85135
             }
           ],
-          "missed_model_pulls": 0
+          "missed_model_pulls": 1
         }
       }
     },
@@ -7690,7 +7695,7 @@
           "display_name": "FCOO GETM",
           "color": "#FF8C42",
           "predicted_now": null,
-          "next_surfacing_time": "2026-07-19T03:24:02.044648",
+          "next_surfacing_time": "2026-07-20T16:40:18.470248",
           "next_surfacing_position": {
             "lat": 54.97326,
             "lon": 15.56729
@@ -7702,19 +7707,19 @@
               "lon": 15.56729
             }
           ],
-          "missed_model_pulls": 13
+          "missed_model_pulls": 14
         },
         "cmems": {
           "display_name": "CMEMS Baltic",
           "color": "#00D4FF",
           "predicted_now": {
-            "lat": 54.97326,
-            "lon": 15.56729
+            "lat": 54.97393,
+            "lon": 15.56583
           },
-          "next_surfacing_time": "2026-07-19T03:24:02.044648",
+          "next_surfacing_time": "2026-07-20T16:40:18.470248",
           "next_surfacing_position": {
-            "lat": 54.97326,
-            "lon": 15.56729
+            "lat": 54.97393,
+            "lon": 15.56583
           },
           "trajectory_history": [
             {
@@ -8453,7 +8458,7 @@
               "lon": 15.57279
             }
           ],
-          "missed_model_pulls": 0
+          "missed_model_pulls": 1
         }
       }
     },
@@ -10896,7 +10901,7 @@
               "lon": 15.20564
             }
           ],
-          "missed_model_pulls": 13
+          "missed_model_pulls": 14
         },
         "cmems": {
           "display_name": "CMEMS Baltic",
@@ -11627,7 +11632,7 @@
               "lon": 15.2097
             }
           ],
-          "missed_model_pulls": 0
+          "missed_model_pulls": 1
         }
       }
     }
