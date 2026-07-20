@@ -302,7 +302,15 @@ def mode_vote_action(actions: list[ControlAction]) -> ControlAction:
     park_mode: mode (most common value) across history -- the agreed
     resolution for mixed histories, rather than treating mixed history as
     "no usable history."
-    All numeric fields: mean across history.
+    All numeric fields: median, not mean, across history. Mean was tried
+    first and is fragile to a single anomalous cycle: e.g. every float's
+    Rtraj.nc carries a CYCLE_NUMBER=-1 pre-deployment entry that floors to
+    cycle_hours=0.5h (see action_from_cycle's max(cycle_hours, 0.5)), and one
+    such value inside a small window can pull a mean well below the float's
+    real, consistent cycle length while leaving the median untouched (a real
+    float's last-10-cycle mean_cycle_hours came out 34h below its median for
+    exactly this reason). Callers are expected to pass only a float's recent
+    cycles, not its full lifetime -- see run._derive_cycle_action for why.
 
     Raises if `actions` is empty -- callers (add_new_float) are responsible
     for routing empty history to default_action() instead of calling this
@@ -316,11 +324,11 @@ def mode_vote_action(actions: list[ControlAction]) -> ControlAction:
 
     return ControlAction(
         park_mode=park_mode,
-        cycle_hours=float(np.mean([a.cycle_hours for a in actions])),
-        transmission_duration_minutes=float(np.mean([a.transmission_duration_minutes for a in actions])),
-        target_depth=float(np.mean(target_depths)) if target_depths else None,
-        descent_speed_ms=float(np.mean([a.descent_speed_ms for a in actions])),
-        ascent_speed_ms=float(np.mean([a.ascent_speed_ms for a in actions])),
+        cycle_hours=float(np.median([a.cycle_hours for a in actions])),
+        transmission_duration_minutes=float(np.median([a.transmission_duration_minutes for a in actions])),
+        target_depth=float(np.median(target_depths)) if target_depths else None,
+        descent_speed_ms=float(np.median([a.descent_speed_ms for a in actions])),
+        ascent_speed_ms=float(np.median([a.ascent_speed_ms for a in actions])),
     )
 
 

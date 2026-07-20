@@ -7,6 +7,13 @@ lon_max  = 23.0
 [thresholds]
 dead_after_missed_pulls = 5   # consecutive Argo-feed absences before a float is marked dead
 overdue_days            = 10.0 # no real surfacing in this long -> excluded from error scoring
+recent_cycles_for_vote  = 5    # cycle_action mode-vote only looks at this many of the float's most
+                                # recent real cycles, not its full lifetime -- floats get reprogrammed
+                                # to a different cycle_hours mid-mission (confirmed on real floats
+                                # 6990707/7902194: both ran ~23h cycles from Feb to Jun, then reverted
+                                # to ~49h), and a full-history mean/median blends stale regimes into the
+                                # current estimate. Kept deliberately small: 7902194 had only ~5 cycles
+                                # in its current regime by the time this was diagnosed.
 
 [paths]
 store_dir      = "data/store"

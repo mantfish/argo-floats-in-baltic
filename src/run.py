@@ -53,15 +53,16 @@ def _load_config(config_path: Path | None = None) -> dict:
 def _build_globals(cfg: dict) -> None:
     """Populate module-level constants from a loaded config dict."""
     global MODELS, DEAD_THRESHOLD, OVERDUE_DAYS, STORE_DIR, REGION
-    global ARGO_CACHE_DIR, FCOO_CACHE_DIR
+    global ARGO_CACHE_DIR, FCOO_CACHE_DIR, RECENT_CYCLES_FOR_VOTE
 
-    MODELS          = data_handler.MODELS
-    DEAD_THRESHOLD  = cfg["thresholds"]["dead_after_missed_pulls"]
-    OVERDUE_DAYS    = cfg["thresholds"]["overdue_days"]
-    STORE_DIR       = Path(cfg["paths"]["store_dir"])
-    ARGO_CACHE_DIR  = Path(cfg["paths"]["argo_cache_dir"])
-    FCOO_CACHE_DIR  = Path(cfg["paths"]["fcoo_cache_dir"])
-    REGION          = Region(
+    MODELS                  = data_handler.MODELS
+    DEAD_THRESHOLD          = cfg["thresholds"]["dead_after_missed_pulls"]
+    OVERDUE_DAYS            = cfg["thresholds"]["overdue_days"]
+    RECENT_CYCLES_FOR_VOTE  = cfg["thresholds"]["recent_cycles_for_vote"]
+    STORE_DIR               = Path(cfg["paths"]["store_dir"])
+    ARGO_CACHE_DIR          = Path(cfg["paths"]["argo_cache_dir"])
+    FCOO_CACHE_DIR          = Path(cfg["paths"]["fcoo_cache_dir"])
+    REGION                  = Region(
         lat_min=cfg["region"]["lat_min"],
         lat_max=cfg["region"]["lat_max"],
         lon_min=cfg["region"]["lon_min"],
@@ -75,13 +76,14 @@ def _build_globals(cfg: dict) -> None:
 
 
 # Defaults (overwritten by run() via config)
-MODELS         = data_handler.MODELS
-DEAD_THRESHOLD = 5
-OVERDUE_DAYS   = 10.0
-STORE_DIR      = Path("data/store")
-ARGO_CACHE_DIR = Path("data/argo_cache")
-FCOO_CACHE_DIR = Path("data/fcoo_cache")
-REGION         = Region(lat_min=53.5, lat_max=60.0, lon_min=9.0, lon_max=23.0)
+MODELS                 = data_handler.MODELS
+DEAD_THRESHOLD         = 5
+OVERDUE_DAYS           = 10.0
+RECENT_CYCLES_FOR_VOTE = 5
+STORE_DIR              = Path("data/store")
+ARGO_CACHE_DIR         = Path("data/argo_cache")
+FCOO_CACHE_DIR         = Path("data/fcoo_cache")
+REGION                 = Region(lat_min=53.5, lat_max=60.0, lon_min=9.0, lon_max=23.0)
 
 # Padding (degrees) around every active float's anchor + current trajectory
 # tip when building each run's model-data fetch box (see _active_bounding_box)
@@ -407,9 +409,25 @@ def _register_new_floats(floats_db: dict[str, FloatRow], argo_now: dict[str, Arg
 def _derive_cycle_action(float_id: str) -> tuple[ControlAction, list[dict]]:
     """
     Re-derive a float's representative ControlAction (park_mode, cycle_hours,
-    etc) by mode-voting across its full real cycle history, and return the
-    raw per-cycle list alongside it (registration also needs the cycles list
+    etc) by mode-voting across only its most recent RECENT_CYCLES_FOR_VOTE
+    real cycles (NOT full lifetime history -- see below), and return the raw
+    per-cycle list alongside it (registration also needs the cycles list
     itself, for surfacing_history/last_real_position bootstrapping).
+
+    Restricted to a recent window because floats get reprogrammed to a
+    different cycle_hours mid-mission: confirmed on real floats 6990707 and
+    7902194, which both ran a ~23h cycle from 2026-02-17/19 through
+    2026-06-10, then reverted to their normal ~49h cycle on the same date
+    (almost certainly a coordinated field-campaign reprogram across a float
+    batch, not a data artifact -- verified against raw CYCLE_NUMBER/JULD
+    timestamps). A full-history average blends that stale regime into the
+    current estimate and systematically undershoots the float's current
+    cycle length -- e.g. 6990707's full-history mean cycle_hours implied a
+    ~37h total cycle against a true current ~49h, a 24% error that shows up
+    directly as next_surfacing() predictions drifting further from the real
+    surfacing time the longer a leg runs. RECENT_CYCLES_FOR_VOTE is
+    deliberately small (config.toml default: 5) because a float can have as
+    few as ~5 cycles in its current regime by the time this is computed.
 
     Always re-downloads Rtraj.nc (force_refresh=True) rather than trusting
     whatever's cached -- GDAC's Rtraj.nc grows in place as a float completes
@@ -428,7 +446,7 @@ def _derive_cycle_action(float_id: str) -> tuple[ControlAction, list[dict]]:
     )
     cycles = cycle_extractor.extract_cycles(rtraj_path, bathy_interp=_bathy_interp)
     if len(cycles) >= 2:
-        actions = cycle_extractor.build_actions(cycles)
+        actions = cycle_extractor.build_actions(cycles)[-RECENT_CYCLES_FOR_VOTE:]
         action = cycle_extractor.mode_vote_action(actions)
     else:
         action = cycle_extractor.default_action()

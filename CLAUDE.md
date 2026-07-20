@@ -156,24 +156,45 @@ silently violate them.
    different failure modes that happen to look similar (a frozen
    trajectory sitting around for a while). Don't conflate them.
 
-9. **`cycle_action` is mode-voted across a float's full `.traj` history,
-   every run, not just at registration** (`run._derive_cycle_action`, called
-   from both `_build_new_float_row` and `run._refresh_cycle_actions`):
-   `park_mode` by majority vote, everything else by mean. A float with
-   fewer than 2 usable historical cycles gets `default_action()` instead
-   (5-day bottom-park fallback) rather than attempting to vote on
-   insufficient data. `_refresh_cycle_actions` re-fetches `Rtraj.nc` fresh
-   (`force_refresh=True`) every run before re-voting, since GDAC's Rtraj.nc
-   grows in place as a float completes new real cycles -- a cached copy
-   would otherwise freeze the estimate at whatever was known the first time
-   the float was ever seen. A failed refresh keeps the float's *previous*
-   `cycle_action` rather than falling back to `default_action()` -- that
-   fallback only makes sense at registration, where there's no previous
-   estimate to protect. Every run's derived action (whether it changed or
-   not) is appended to `cycle_action_history.parquet`
-   (`float_store.save_cycle_action_history`) so how the estimate evolves
-   over time can be inspected later; a change from the previous run also
-   gets a `logger.info` line.
+9. **`cycle_action` is mode-voted across only a float's most recent
+   `RECENT_CYCLES_FOR_VOTE` real cycles (config.toml, default 5) -- NOT its
+   full lifetime history**, every run, not just at registration
+   (`run._derive_cycle_action`, called from both `_build_new_float_row` and
+   `run._refresh_cycle_actions`): `park_mode` by majority vote, everything
+   else by **median** (not mean -- see below). This was originally
+   full-history mean and was deliberately changed after diagnosing a real
+   accuracy problem: floats get reprogrammed to a different `cycle_hours`
+   mid-mission. Confirmed on real floats 6990707 and 7902194, which both ran
+   a ~23h cycle from 2026-02-17/19 through 2026-06-10, then reverted to
+   their normal ~49h cycle on the same date (almost certainly a coordinated
+   field-campaign reprogram across a float batch, not a data artifact --
+   verified against raw `CYCLE_NUMBER`/`JULD` timestamps in their Rtraj.nc).
+   A full-history average blends that stale regime into the current
+   estimate: 6990707's full-history mean implied a ~37h total cycle against
+   a true current ~49h, a 24% error, which shows up directly as
+   `next_surfacing()` predictions drifting tens of hours from the real
+   surfacing time. Mean was also independently fragile even within a
+   window: every float's Rtraj.nc carries a `CYCLE_NUMBER=-1`
+   pre-deployment entry that floors to `cycle_hours=0.5h`
+   (`action_from_cycle`'s `max(cycle_hours, 0.5)`), and one such value
+   inside a 10-cycle window pulled a real float's mean 34h below its median.
+   `RECENT_CYCLES_FOR_VOTE` is deliberately small because a float can have
+   as few as ~5 cycles in its current regime by the time this runs (true for
+   7902194 at diagnosis time) -- a larger window would still blend in a
+   stale regime. A float with fewer than 2 usable historical cycles gets
+   `default_action()` instead (5-day bottom-park fallback) rather than
+   attempting to vote on insufficient data. `_refresh_cycle_actions`
+   re-fetches `Rtraj.nc` fresh (`force_refresh=True`) every run before
+   re-voting, since GDAC's Rtraj.nc grows in place as a float completes new
+   real cycles -- a cached copy would otherwise freeze the estimate at
+   whatever was known the first time the float was ever seen. A failed
+   refresh keeps the float's *previous* `cycle_action` rather than falling
+   back to `default_action()` -- that fallback only makes sense at
+   registration, where there's no previous estimate to protect. Every run's
+   derived action (whether it changed or not) is appended to
+   `cycle_action_history.parquet` (`float_store.save_cycle_action_history`)
+   so how the estimate evolves over time can be inspected later; a change
+   from the previous run also gets a `logger.info` line.
 
 10. **No EKF, no covariance, no process noise, no bias state, anywhere in
     this codebase.** `simulate_cycle` is deterministic position-only
