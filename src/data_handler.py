@@ -3,10 +3,11 @@ data_handler.py
 ================
 All external data acquisition for the CMEMS/FCOO leaderboard.
 
-FCOO ("fcoo" model) is accessed via OPeNDAP, using plain xr.open_dataset()
-against the shared dk_nested.velocities.Z3D_<YYYYMMDDHH>.nc GETM product --
-one file per forecast run containing BOTH FCOO grids as separate variable
-groups, merged here into a single model rather than two:
+FCOO ("fcoo" model) is accessed via OPeNDAP through xarray's "pydap" engine
+(not the default netCDF4 engine -- see _open_fcoo_dataset), against the
+shared dk_nested.velocities.Z3D_<YYYYMMDDHH>.nc GETM product -- one file per
+forecast run containing BOTH FCOO grids as separate variable groups, merged
+here into a single model rather than two:
     dk  -- 1 nm North Sea + Baltic, full domain, 10 real depth levels (5-200 m)
     idk -- 600 m inner-Danish waters (a spatial nest, not a subgrid of dk),
            6 real depth levels (5-50 m)
@@ -270,6 +271,32 @@ def _latest_getm_file(files: list[str], prefix: str) -> str | None:
     return max(matches, key=_ts)
 
 
+_fcoo_session: Optional[requests.Session] = None
+
+
+def _get_fcoo_session() -> requests.Session:
+    """
+    Shared requests.Session carrying the browser User-Agent, reused for every
+    OPeNDAP data request (not just the directory-listing scrape). Previously
+    the browser UA was only ever attached to the plain requests.get() calls
+    (_list_getm_files); the actual bulk data reads went through netCDF4's
+    built-in DAP client, which has no hook for custom headers and so silently
+    presented as a generic (non-browser) client. Routing those reads through
+    pydap instead (see _open_fcoo_dataset) lets this session's UA apply there
+    too.
+    """
+    global _fcoo_session
+    if _fcoo_session is None:
+        _fcoo_session = requests.Session()
+        _fcoo_session.headers.update({"User-Agent": _BROWSER_UA})
+    return _fcoo_session
+
+
+def _open_fcoo_dataset(url: str) -> xr.Dataset:
+    """Open a FCOO OPeNDAP URL via pydap, using the shared browser-UA session."""
+    return xr.open_dataset(url, engine="pydap", session=_get_fcoo_session())
+
+
 def _get_fcoo_z3d_url() -> str:
     """Discover (once) the latest shared dk_nested Z3D file URL."""
     global _fcoo_z3d_url
@@ -317,15 +344,15 @@ def _load_fcoo_var_chunked(url: str, var_name: str, sel: dict, n_time: int, chun
     by ~8 timesteps too.
     """
     chunks = []
-    ds = xr.open_dataset(url)
+    ds = _open_fcoo_dataset(url)
     for t0 in range(0, n_time, chunk_size):
         t1 = min(t0 + chunk_size, n_time)
         chunk_sel = dict(sel, time=slice(t0, t1))
         last_exc: Optional[Exception] = None
         for attempt in range(_FCOO_LOAD_MAX_RETRIES):
-            if attempt > 0:
-                ds = xr.open_dataset(url)  # fresh connection on retry
             try:
+                if attempt > 0:
+                    ds = _open_fcoo_dataset(url)  # fresh connection on retry
                 arr = ds[var_name].isel(**chunk_sel).load().values
             except Exception as exc:
                 last_exc = exc
@@ -401,7 +428,7 @@ def _build_fcoo_dataset(url: str, suffix: str, region: Region) -> xr.Dataset:
     lat_name, lon_name, zax_name = f"latc_{suffix}", f"lonc_{suffix}", f"zax_{suffix}"
     u_name, v_name = f"uu_{suffix}", f"vv_{suffix}"
 
-    ds = xr.open_dataset(url)   # cheap: metadata + small 1-D coords only, here
+    ds = _open_fcoo_dataset(url)   # cheap: metadata + small 1-D coords only, here
     latc = ds[lat_name].values
     lonc = ds[lon_name].values
     times = ds["time"].values

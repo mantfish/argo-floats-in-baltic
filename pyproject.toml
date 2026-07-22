@@ -13,6 +13,7 @@ dependencies = [
     "pyarrow>=14.0",
     "requests>=2.31",
     "netcdf4>=1.6",
+    "pydap>=3.5",
     "ipykernel>=7.3.0",
     "matplotlib>=3.11.0",
 ]
