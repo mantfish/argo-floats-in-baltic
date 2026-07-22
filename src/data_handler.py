@@ -437,7 +437,21 @@ def _build_fcoo_dataset(url: str, suffix: str, region: Region) -> xr.Dataset:
     lat_idx = np.where((latc >= region.lat_min) & (latc <= region.lat_max))[0]
     lon_idx = np.where((lonc >= region.lon_min) & (lonc <= region.lon_max))[0]
     if not lat_idx.size or not lon_idx.size:
-        raise RuntimeError(f"FCOO {suffix} grid has no points inside the pipeline region")
+        # `region` here is usually run._active_bounding_box's shrunk box around
+        # only the currently-active floats, not the full configured REGION --
+        # so this is expected periodically for 'idk' (a small, fixed
+        # inner-Danish-waters nest): floats sitting anywhere else this round
+        # legitimately have zero overlap with it. Fall back to idk's full
+        # native extent rather than failing the whole fcoo fetch --
+        # simulate.build_interpolators already only uses idk where a query
+        # point actually falls inside its bounds (dk otherwise), so idk data
+        # nobody queries this round is harmless, just unused.
+        logger.info(
+            "FCOO %s: no points in this round's fetch region -- using the grid's full native extent instead",
+            suffix,
+        )
+        lat_idx = np.arange(latc.size)
+        lon_idx = np.arange(lonc.size)
     lat0, lat1 = int(lat_idx[0]), int(lat_idx[-1])
     lon0, lon1 = int(lon_idx[0]), int(lon_idx[-1])
 
