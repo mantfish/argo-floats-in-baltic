@@ -52,10 +52,11 @@ def _load_config(config_path: Path | None = None) -> dict:
 
 def _build_globals(cfg: dict) -> None:
     """Populate module-level constants from a loaded config dict."""
-    global MODELS, DEAD_THRESHOLD, OVERDUE_DAYS, STORE_DIR, REGION
+    global MODELS, SHADOW_MODELS, DEAD_THRESHOLD, OVERDUE_DAYS, STORE_DIR, REGION
     global ARGO_CACHE_DIR, FCOO_CACHE_DIR, RECENT_CYCLES_FOR_VOTE
 
     MODELS                  = data_handler.MODELS
+    SHADOW_MODELS           = tuple(f"{m}{data_handler.SHADOW_SUFFIX}" for m in MODELS)
     DEAD_THRESHOLD          = cfg["thresholds"]["dead_after_missed_pulls"]
     OVERDUE_DAYS            = cfg["thresholds"]["overdue_days"]
     RECENT_CYCLES_FOR_VOTE  = cfg["thresholds"]["recent_cycles_for_vote"]
@@ -77,6 +78,15 @@ def _build_globals(cfg: dict) -> None:
 
 # Defaults (overwritten by run() via config)
 MODELS                 = data_handler.MODELS
+# Shadow tracks: one per real model, simulated with force_drift=True (see
+# simulate.simulate_cycle) so a park_on_bottom float still gets advected by
+# the parking-depth current instead of sitting motionless. Run purely to
+# compare against the real park_on_bottom assumption once enough real
+# surfacings have scored both -- deliberately never surfaced to web_export,
+# so they don't show up on the leaderboard or map (see web_export.py's
+# SHADOW_SUFFIX filtering). Everything else about them (storage, scoring,
+# anchor resets) is identical to a real model track.
+SHADOW_MODELS           = tuple(f"{m}{data_handler.SHADOW_SUFFIX}" for m in MODELS)
 DEAD_THRESHOLD         = 5
 OVERDUE_DAYS           = 10.0
 RECENT_CYCLES_FOR_VOTE = 5
@@ -193,11 +203,18 @@ def _extend_trajectories(floats_db: dict[str, FloatRow]) -> list[dict]:
     The fetch itself is spatially restricted to _active_bounding_box rather
     than the full REGION, to shrink the FCOO corruption surface.
 
-    Returns one forecast_history row per (float, model) that actually got
+    Returns one forecast_history row per (float, track) that actually got
     extended this round -- what this run's freshest trajectory predicts for
     the float's next surfacing. Frozen (no-new-data) rows are skipped: a
     frozen cycle carries no new information, so recording one would just be
     a duplicate of the previous row.
+
+    Each real model also gets a shadow track extended alongside it here
+    (same fetched model_data, no extra network call) -- see SHADOW_MODELS'
+    docstring. `track_key` below is either `model` itself or
+    `f"{model}{SHADOW_SUFFIX}"`; everything downstream (freeze-on-gap,
+    missed_model_pulls, forecast_history) is identical between the two,
+    only `force_drift` differs.
     """
     now        = datetime.utcnow()
     fetch_start = now - timedelta(days=1)   # 1-day lookback so no float is gapped
@@ -216,8 +233,11 @@ def _extend_trajectories(floats_db: dict[str, FloatRow]) -> list[dict]:
                 model, exc_info=True,
             )
             for row in floats_db.values():
-                if not row.is_dead and model in row.models:
-                    row.models[model].missed_model_pulls += 1
+                if row.is_dead:
+                    continue
+                for track_key in (model, f"{model}{data_handler.SHADOW_SUFFIX}"):
+                    if track_key in row.models:
+                        row.models[track_key].missed_model_pulls += 1
             continue
 
         lat_min, lat_max, lon_min, lon_max = data_handler.model_domain_bounds(raw)
@@ -226,62 +246,70 @@ def _extend_trajectories(floats_db: dict[str, FloatRow]) -> list[dict]:
             if row.is_dead:
                 continue
 
-            anchor_lat, anchor_lon, anchor_time = row.last_real_position
-            in_domain = lat_min <= anchor_lat <= lat_max and lon_min <= anchor_lon <= lon_max
-            if not in_domain:
-                row.models.pop(model, None)
-                continue
-            if model not in row.models:
-                row.models[model] = ModelTrack(trajectory=[(anchor_time, anchor_lat, anchor_lon)])
+            real_anchor_lat, real_anchor_lon, real_anchor_time = row.last_real_position
+            in_domain = lat_min <= real_anchor_lat <= lat_max and lon_min <= real_anchor_lon <= lon_max
 
-            track = row.models[model]
-            issue_time = track.trajectory[-1][0]  # invariant: trajectory always has >= 1 point
-            model_data = data_handler.trim_to_forecast_only(raw, issue_time)
+            for track_key, force_drift in (
+                (model, False),
+                (f"{model}{data_handler.SHADOW_SUFFIX}", True),
+            ):
+                if not in_domain:
+                    row.models.pop(track_key, None)
+                    continue
+                if track_key not in row.models:
+                    row.models[track_key] = ModelTrack(
+                        trajectory=[(real_anchor_time, real_anchor_lat, real_anchor_lon)]
+                    )
 
-            if _is_empty(model_data):
-                # Nothing beyond where this row already is -- freeze-on-gap.
-                track.missed_model_pulls += 1
-                continue
+                track = row.models[track_key]
+                issue_time = track.trajectory[-1][0]  # invariant: trajectory always has >= 1 point
+                model_data = data_handler.trim_to_forecast_only(raw, issue_time)
 
-            tip_time, tip_lat, tip_lon = track.trajectory[-1]
-            anchor_time, anchor_lat, anchor_lon = track.trajectory[0]
+                if _is_empty(model_data):
+                    # Nothing beyond where this row already is -- freeze-on-gap.
+                    track.missed_model_pulls += 1
+                    continue
 
-            try:
-                new_points = simulate.simulate_cycle(
-                    model_data=model_data,
-                    control_action=row.cycle_action,
-                    anchor_lat=anchor_lat,
-                    anchor_lon=anchor_lon,
-                    anchor_time=anchor_time,
-                    tip_lat=tip_lat,
-                    tip_lon=tip_lon,
-                    tip_time=tip_time,
-                    until_time=_last_timestamp(model_data),
-                    bathy_interp=_bathy_interp,
-                    float_id=row.float_id,
-                )
-            except Exception:
-                logger.warning(
-                    "simulate_cycle failed for float %s model %s -- skipping this float",
-                    row.float_id, model, exc_info=True,
-                )
-                track.missed_model_pulls += 1
-                continue
-            track.missed_model_pulls = 0
-            track.trajectory.extend(new_points)
+                tip_time, tip_lat, tip_lon = track.trajectory[-1]
+                anchor_time, anchor_lat, anchor_lon = track.trajectory[0]
 
-            surf_time = simulate.next_surfacing(anchor_time, row.cycle_action, now)
-            surf_pos = simulate.lookup_position(track.trajectory, surf_time)
-            if surf_pos is not None:
-                forecast_rows.append({
-                    "float_id": row.float_id,
-                    "cycle_number": len(row.surfacing_history),
-                    "forecast_name": model,
-                    "forecast": now,
-                    "expected_surfacing_time": surf_time,
-                    "expected_surfacing_lat": surf_pos[0],
-                    "expected_surfacing_lon": surf_pos[1],
-                })
+                try:
+                    new_points = simulate.simulate_cycle(
+                        model_data=model_data,
+                        control_action=row.cycle_action,
+                        anchor_lat=anchor_lat,
+                        anchor_lon=anchor_lon,
+                        anchor_time=anchor_time,
+                        tip_lat=tip_lat,
+                        tip_lon=tip_lon,
+                        tip_time=tip_time,
+                        until_time=_last_timestamp(model_data),
+                        bathy_interp=_bathy_interp,
+                        float_id=row.float_id,
+                        force_drift=force_drift,
+                    )
+                except Exception:
+                    logger.warning(
+                        "simulate_cycle failed for float %s track %s -- skipping this track",
+                        row.float_id, track_key, exc_info=True,
+                    )
+                    track.missed_model_pulls += 1
+                    continue
+                track.missed_model_pulls = 0
+                track.trajectory.extend(new_points)
+
+                surf_time = simulate.next_surfacing(anchor_time, row.cycle_action, now)
+                surf_pos = simulate.lookup_position(track.trajectory, surf_time)
+                if surf_pos is not None:
+                    forecast_rows.append({
+                        "float_id": row.float_id,
+                        "cycle_number": len(row.surfacing_history),
+                        "forecast_name": track_key,
+                        "forecast": now,
+                        "expected_surfacing_time": surf_time,
+                        "expected_surfacing_lat": surf_pos[0],
+                        "expected_surfacing_lon": surf_pos[1],
+                    })
 
     return forecast_rows
 
@@ -343,7 +371,7 @@ def _reconcile_with_argo(
             prev_lat, prev_lon, _ = row.last_real_position
             drift_m = _haversine_error_m(prev_lat, prev_lon, real_lat, real_lon)
 
-            for model in MODELS:
+            for model in (*MODELS, *SHADOW_MODELS):
                 if model not in row.models:
                     continue
                 predicted = _lookup(row.models[model].trajectory, real_time)
@@ -373,7 +401,7 @@ def _reconcile_with_argo(
 
         row.surfacing_history.append((real_lat, real_lon, real_time))
         row.last_real_position = (real_lat, real_lon, real_time)
-        for model in MODELS:
+        for model in (*MODELS, *SHADOW_MODELS):
             if model not in row.models:
                 continue
             for t, lat, lon in row.models[model].trajectory:
@@ -478,7 +506,10 @@ def _build_new_float_row(float_id: str, pull: ArgoPull) -> FloatRow:
         last_real_position=(last_lat, last_lon, last_time),
         missed_pulls=0,
         is_dead=False,
-        models={m: ModelTrack(trajectory=[(last_time, last_lat, last_lon)]) for m in MODELS},
+        models={
+            m: ModelTrack(trajectory=[(last_time, last_lat, last_lon)])
+            for m in (*MODELS, *SHADOW_MODELS)
+        },
         surfacing_history=surfacing_history,
     )
 

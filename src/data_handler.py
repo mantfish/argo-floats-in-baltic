@@ -63,6 +63,13 @@ class Region:
 
 MODELS = ("cmems", "fcoo")
 
+# Suffix marking a "shadow" variant of a real model track (same model_data,
+# simulated with a different physics assumption -- see run.py's
+# SHADOW_MODELS / simulate.simulate_cycle's force_drift). Shared here rather
+# than duplicated in run.py and web_export.py so both agree on which model
+# keys are the public ones vs. internal-only.
+SHADOW_SUFFIX = "_shadow"
+
 CMEMS_DATASET_ID = "cmems_mod_bal_phy_anfc_PT1H-i_202411"
 CMEMS_DEPTH_MAX  = 200.0   # metres -- floats don't go deeper in the Baltic
 

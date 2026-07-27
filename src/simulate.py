@@ -364,6 +364,7 @@ def simulate_cycle(
     dt: float = 3600.0,
     bathy_interp: Optional[Callable[[float, float], float]] = None,
     float_id: str = "",
+    force_drift: bool = False,
 ) -> list[tuple[datetime, float, float]]:
     """
     Extend a trajectory forward from `tip_time` to `until_time`, using
@@ -374,6 +375,14 @@ def simulate_cycle(
         taper toward the seabed instead of hard zero-filling (see
         _taper_to_seabed). float_id is only used to label that taper's log
         warning. Both default to the old zero-fill behavior if omitted.
+
+    force_drift: if True, disables the park_on_bottom skip below -- the
+        float gets advected by the parking-depth current for the entire
+        cycle instead of sitting motionless while "on the bottom". Used to
+        run a shadow track alongside the normal one (see run.py's
+        SHADOW_MODELS) so the two park-phase assumptions can be compared
+        against real surfacings without either affecting the public
+        leaderboard/map.
 
     anchor_lat/anchor_lon/anchor_time: the float's last confirmed real
         surfacing. Defines (x=0, y=0) and cycle-phase zero for every repeat
@@ -429,7 +438,8 @@ def simulate_cycle(
             depth = 0.0
 
         parked_on_bottom = (
-            control_action.park_mode == "park_on_bottom"
+            not force_drift
+            and control_action.park_mode == "park_on_bottom"
             and descent_s <= cycle_elapsed < descent_s + parking_s
         )
 

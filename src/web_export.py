@@ -17,6 +17,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from .data_handler import SHADOW_SUFFIX
 from .float_store import FloatRow
 from .simulate import lookup_position, next_surfacing
 
@@ -51,6 +52,7 @@ def _build_leg_paths(leg_history_db: pd.DataFrame) -> dict[tuple[str, str, pd.Ti
     if leg_history_db.empty:
         return {}
     lhd = leg_history_db.copy()
+    lhd = lhd[~lhd["model"].astype(str).str.endswith(SHADOW_SUFFIX)]
     lhd["leg_end_time"] = pd.to_datetime(lhd["leg_end_time"])
     lhd["t"] = pd.to_datetime(lhd["t"])
     paths: dict[tuple[str, str, pd.Timestamp], list[list[float]]] = {}
@@ -88,6 +90,7 @@ def _build_scoring_history(error_db: pd.DataFrame, leg_history_db: pd.DataFrame)
     leg_paths = _build_leg_paths(leg_history_db)
 
     edb = error_db.copy()
+    edb = edb[~edb["model"].astype(str).str.endswith(SHADOW_SUFFIX)]
     edb["t"] = pd.to_datetime(edb["t"])
 
     for (float_id, t), grp in edb.groupby(["float_id", "t"]):
@@ -154,6 +157,8 @@ def export_floats(
 
         models_out: dict[str, dict] = {}
         for model, track in row.models.items():
+            if model.endswith(SHADOW_SUFFIX):
+                continue
             predicted = lookup_position(track.trajectory, now)
 
             surf_time = next_surfacing(anchor_time, ca, now)
@@ -239,6 +244,7 @@ def export_leaderboard(error_db: pd.DataFrame) -> dict:
 
     if not error_db.empty:
         edb = error_db.copy()
+        edb = edb[~edb["model"].astype(str).str.endswith(SHADOW_SUFFIX)]
         edb["t"] = pd.to_datetime(edb["t"])
         edb["error_km"] = edb["error_m"] / 1000.0
 
