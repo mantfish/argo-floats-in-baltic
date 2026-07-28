@@ -610,7 +610,7 @@ function drawFloatOverlays(f) {
   //      completed after that capture was added). Falls back to a straight
   //      line from leg_start (the exact anchor the leg started from) to the
   //      predicted position for older legs with no captured path.
-  //   2. error line (dotted, model color): predicted -> real -- the gap
+  //   2. error line (dotted, yellow): predicted -> real -- the gap
   //      between forecast and reality.
   const scoring = f.scoring_history || [];
 
@@ -632,7 +632,7 @@ function drawFloatOverlays(f) {
 
       const errLine = L.polyline(
         [[pred.lat, pred.lon], [ev.real.lat, ev.real.lon]],
-        { color, weight: 1.5, opacity: 0.75, dashArray: '2 4' }
+        { color: '#E8B923', weight: 1.5, opacity: 0.75, dashArray: '2 4' }
       );
       errLine.addTo(map);
       overlayLayers.push(errLine);

@@ -24,6 +24,7 @@ with no side effects of its own.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import tomllib
 from datetime import datetime, timedelta
@@ -100,6 +101,25 @@ REGION                 = Region(lat_min=53.5, lat_max=60.0, lon_min=9.0, lon_max
 # -- ~1 degree is roughly 60-110km at these latitudes, comfortably more than
 # a float's typical multi-day drift.
 FETCH_MARGIN_DEG = 1.0
+
+# Per-float ControlAction overrides, applied on top of _derive_cycle_action's
+# voted estimate every time it runs (registration and every _refresh_cycle_actions
+# pass) -- only the given fields are replaced, everything else still comes from
+# the real-cycle vote. Use this when a float's actual hardware parameters are
+# known directly and shouldn't be left to the mode-vote/median estimate.
+#
+# 3902607: descent/ascent speeds confirmed from the float's own deployment
+# parameters (25 mm/s descent, 90 mm/s ascent) rather than the Rtraj.nc-derived
+# estimate, which put ascent at ~164 mm/s (nearly 2x). park_mode confirmed
+# park_on_bottom. cycle_hours/target_depth/transmission_duration_minutes are
+# left on the voted estimate.
+CYCLE_ACTION_OVERRIDES: dict[str, dict] = {
+    "3902607": dict(
+        park_mode="park_on_bottom",
+        descent_speed_ms=0.025,
+        ascent_speed_ms=0.09,
+    ),
+}
 
 
 def run(config_path: Path | None = None) -> None:
@@ -478,6 +498,11 @@ def _derive_cycle_action(float_id: str) -> tuple[ControlAction, list[dict]]:
         action = cycle_extractor.mode_vote_action(actions)
     else:
         action = cycle_extractor.default_action()
+
+    override = CYCLE_ACTION_OVERRIDES.get(float_id)
+    if override:
+        action = dataclasses.replace(action, **override)
+
     return action, cycles
 
 
