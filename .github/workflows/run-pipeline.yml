@@ -46,6 +46,11 @@ jobs:
           COPERNICUSMARINE_SERVICE_PASSWORD: ${{ secrets.COPERNICUSMARINE_PASSWORD }}
         run: uv run main.py
 
+      - name: Notify EKF piloting server of surfacings
+        env:
+          EKF_API_BASE_URL: ${{ vars.EKF_API_BASE_URL }}
+        run: uv run scripts/notify_ekf_server.py
+
       - name: Commit updated state + exported JSON
         run: |
           git config user.name "github-actions[bot]"
