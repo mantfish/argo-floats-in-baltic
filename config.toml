@@ -14,6 +14,13 @@ recent_cycles_for_vote  = 5    # cycle_action mode-vote only looks at this many 
                                 # to ~49h), and a full-history mean/median blends stale regimes into the
                                 # current estimate. Kept deliberately small: 7902194 had only ~5 cycles
                                 # in its current regime by the time this was diagnosed.
+next_surfacing_grace_hours = 12.0  # simulate.next_surfacing: once wall-clock time is this far past our
+                                # own estimate of when a cycle's communicating window opens, give up on
+                                # that cycle and predict the next one instead. Real cycle length jitters
+                                # by a few hours around the median cycle_hours estimate, so without this
+                                # grace, the instant "now" ticks even a minute past our own estimate,
+                                # next_surfacing jumped a FULL cycle ahead (visible as ~one-cycle-length
+                                # timing_error_h spikes in prediction_diagnostics.ipynb section 3).
 
 [paths]
 store_dir      = "data/store"

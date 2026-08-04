@@ -54,9 +54,20 @@ FloatRow:
 
 ```python
 ModelTrack:
-    trajectory: [(t, lat, lon), ...]   # ordered; trajectory[0] is always the anchor
-    missed_model_pulls: int            # consecutive cycles with no new forecast data
+    trajectory: [(t, lat, lon, depth), ...]  # ordered; trajectory[0] is always the anchor
+    missed_model_pulls: int                  # consecutive cycles with no new forecast data
 ```
+
+`depth` (dbar) is `simulate_cycle`'s own descent/park/ascent phase-recovery
+number for that point -- already computed internally to decide advection
+(the `park_on_bottom` skip), just also returned instead of discarded. An
+anchor point (real surfacing, whether from a fresh reset or initial
+registration) always has `depth == 0.0` -- it's the surface by definition.
+Trajectories saved before this field existed load back with `depth = NaN`
+(`float_store.load_floats_db`/`load_leg_history` backfill it for
+missing-column tolerance); `web_export.export_floats` maps that to JSON
+`null`, never a bare `NaN` token (which `JSON.parse` on the frontend would
+reject outright).
 
 **`ControlAction`** (`simulate.py`) -- one float's representative dive profile:
 
@@ -75,8 +86,8 @@ ControlAction:
 
 **Storage** (`float_store.py`): parquet, seven tables in `STORE_DIR`:
 `floats_meta.parquet` (scalar per-float fields), `trajectories.parquet`
-(long format: `float_id, model, t, lat, lon`), `surfacings.parquet` (real
-confirmed surfacing history, long format: `float_id, t, lat, lon`),
+(long format: `float_id, model, t, lat, lon, depth`), `surfacings.parquet`
+(real confirmed surfacing history, long format: `float_id, t, lat, lon`),
 `errors.parquet` (`error_db`: `float_id, model, t, error_m, drift_m,
 real_lat, real_lon, predicted_lat, predicted_lon, leg_start_lat,
 leg_start_lon`), `forecast_history.parquet`
@@ -84,13 +95,17 @@ leg_start_lon`), `forecast_history.parquet`
 `run._extend_trajectories`), `cycle_action_history.parquet` (one row per
 float/pipeline-run re-derived `cycle_action`, see `run._refresh_cycle_actions`
 and design decision 9 below), and `leg_history.parquet` (long format:
-`float_id, model, leg_end_time, t, lat, lon` -- every point of a completed
-forecast leg's actual simulated path, captured in `run._reconcile_with_argo`
-right before an anchor reset would otherwise discard it; `leg_end_time` is
-the real surfacing time that closed the leg out, joinable against
-`errors.parquet`'s `t`). All seven are missing-file-tolerant on load
-(`float_store.load_*` returns an empty/correctly-columned result rather than
-erroring) and whole-frame-overwritten on save.
+`float_id, model, leg_end_time, t, lat, lon, depth` -- every point of a
+completed forecast leg's actual simulated path, captured in
+`run._reconcile_with_argo` right before an anchor reset would otherwise
+discard it; `leg_end_time` is the real surfacing time that closed the leg
+out, joinable against `errors.parquet`'s `t`). All seven are
+missing-file-tolerant on load (`float_store.load_*` returns an
+empty/correctly-columned result rather than erroring) and
+whole-frame-overwritten on save. `trajectories.parquet` and
+`leg_history.parquet` are additionally missing-*column*-tolerant for
+`depth` specifically (backfilled `NaN` on load), since both tables predate
+that column.
 
 ## Design decisions worth knowing before you touch this code
 
@@ -124,18 +139,20 @@ silently violate them.
 
 5. **Anchor reset happens exactly at confirmed real surfacings.** When a
    new real ping lands, `trajectory` is reset to a single point:
-   `(real_time, real_lat, real_lon)`. Phase (descending/parking/ascending/
-   communicating) is *not* stored anywhere -- it's recovered in
+   `(real_time, real_lat, real_lon, 0.0)` -- depth `0.0` because a real
+   surfacing is by definition at the surface. Phase (descending/parking/
+   ascending/communicating) is *not* stored anywhere -- it's recovered in
    `simulate_cycle` from elapsed time since that anchor, modulo one full
    cycle duration. This recovery is only correct because of this exact
    reset behavior; if anchor resets ever stop happening at every confirmed
    surfacing, phase recovery breaks silently. Immediately before the reset,
-   `_reconcile_with_argo` copies the outgoing trajectory's points (up to and
-   including `real_time`) into `leg_history_rows` -> `leg_history.parquet`,
-   since this is the only moment that completed leg's full simulated path
-   still exists -- purely for later display/audit (`web_export`'s
-   `scoring_history[*].predictions[model].path`, drawn by `map.html`), not
-   read by any live simulation logic.
+   `_reconcile_with_argo` copies the outgoing trajectory's points, depth
+   included, (up to and including `real_time`) into `leg_history_rows` ->
+   `leg_history.parquet`, since this is the only moment that completed
+   leg's full simulated path still exists -- purely for later display/audit
+   (`web_export`'s `scoring_history[*].predictions[model].path`, drawn by
+   `map.html`, and `prediction_diagnostics.ipynb`'s depth-vs-time section),
+   not read by any live simulation logic.
 
 6. **Freeze-on-gap, not backfill.** If no new model data arrives, or it
    doesn't extend past where a row already is, that row's trajectory is
@@ -201,6 +218,33 @@ silently violate them.
     integration. If you find yourself wanting to add uncertainty
     propagation here, that almost certainly belongs in the Argo+ piloting
     project instead, not this one.
+
+11. **`next_surfacing`'s cycle-boundary jump has a `grace_hours` tolerance
+    (`NEXT_SURFACING_GRACE_HOURS`, config.toml, default 12h) -- without it,
+    a one-minute-late real cycle produced a full-cycle-length timing error.**
+    Real per-cycle duration jitters by a few hours around the median-voted
+    `cycle_hours` estimate (design decision 9). The old code found the
+    smallest cycle-boundary strictly after `now`, full stop: the instant
+    `now` ticked past *the model's own estimate* of the current cycle's
+    communicating-window start -- even though the real float hadn't
+    surfaced yet -- it concluded that window must already be over and
+    jumped a FULL cycle ahead. Confirmed on real data: float 3902607 (a
+    ~114h cycle) showed `timing_error_h` spikes of ~100-114h in
+    `prediction_diagnostics.ipynb` section 3, and 6990707/7902194 (~49h
+    cycles) showed ~20-50h spikes -- each essentially exactly one cycle
+    length, not a plausible few-hour miss. The fix (`simulate.py`'s
+    `next_surfacing`) keeps predicting the *current* cycle's boundary
+    (clamped to just after `now` if already passed) for up to
+    `grace_hours` past our own estimate of it, and only advances to the
+    next cycle once that grace is exceeded -- still fully deterministic,
+    no probability distributions added (design decision 10 still holds),
+    just a different threshold for when to give up on the current cycle.
+    `run.py`'s own call site passes `NEXT_SURFACING_GRACE_HOURS` explicitly
+    (same pattern as `OVERDUE_DAYS`/`FloatRow.is_overdue`); other callers
+    (`web_export.py`) fall back to `simulate.py`'s own
+    `DEFAULT_NEXT_SURFACING_GRACE_HOURS` default, since this is a numerical
+    robustness parameter of the phase-recovery formula itself, not a
+    business policy threshold about which floats to track/score.
 
 ## Gotchas / things to double-check, not yet independently verified
 

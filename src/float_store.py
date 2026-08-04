@@ -28,7 +28,7 @@ from .simulate import ControlAction
 @dataclass
 class ModelTrack:
     """One model's simulated trajectory for one float."""
-    trajectory: list[tuple[datetime, float, float]] = field(default_factory=list)
+    trajectory: list[tuple[datetime, float, float, float]] = field(default_factory=list)  # (t, lat, lon, depth)
     missed_model_pulls: int = 0
 
 
@@ -65,20 +65,26 @@ def load_floats_db(store_dir: Path) -> dict[str, FloatRow]:
 
     meta_df  = pd.read_parquet(meta_path)
     traj_df  = pd.read_parquet(traj_path) if traj_path.exists() else pd.DataFrame(
-        columns=["float_id", "model", "t", "lat", "lon"]
+        columns=["float_id", "model", "t", "lat", "lon", "depth"]
     )
+    # "depth" is new -- older trajectories.parquet written before this column
+    # existed won't have it. Missing-column-tolerant like every other load
+    # here, not just missing-file-tolerant: backfill with NaN rather than
+    # erroring, so a repo checked out before this change still loads.
+    if not traj_df.empty and "depth" not in traj_df.columns:
+        traj_df["depth"] = float("nan")
     surf_path = store_dir / "surfacings.parquet"
     surf_df   = pd.read_parquet(surf_path) if surf_path.exists() else pd.DataFrame(
         columns=["float_id", "t", "lat", "lon"]
     )
 
-    # Build trajectory lookup: (float_id, model) -> sorted list of (t, lat, lon)
+    # Build trajectory lookup: (float_id, model) -> sorted list of (t, lat, lon, depth)
     traj_lookup: dict[tuple[str, str], list] = {}
     if not traj_df.empty:
         for (fid, model), grp in traj_df.groupby(["float_id", "model"]):
             grp = grp.sort_values("t")
             pts = [
-                (_to_dt(row["t"]), float(row["lat"]), float(row["lon"]))
+                (_to_dt(row["t"]), float(row["lat"]), float(row["lon"]), float(row["depth"]))
                 for _, row in grp.iterrows()
             ]
             traj_lookup[(fid, model)] = pts
@@ -174,8 +180,13 @@ def load_leg_history(store_dir: Path) -> pd.DataFrame:
     """
     p = Path(store_dir) / "leg_history.parquet"
     if not p.exists():
-        return pd.DataFrame(columns=["float_id", "model", "leg_end_time", "t", "lat", "lon"])
-    return pd.read_parquet(p)
+        return pd.DataFrame(columns=["float_id", "model", "leg_end_time", "t", "lat", "lon", "depth"])
+    df = pd.read_parquet(p)
+    # "depth" is new -- older leg_history.parquet written before this column
+    # existed won't have it. Missing-column-tolerant like the load above.
+    if not df.empty and "depth" not in df.columns:
+        df["depth"] = float("nan")
+    return df
 
 
 def load_cycle_action_history(store_dir: Path) -> pd.DataFrame:
@@ -235,8 +246,10 @@ def save_floats_db(store_dir: Path, floats_db: dict[str, FloatRow]) -> None:
         meta_rows.append(meta)
 
         for model, track in row.models.items():
-            for t, lat, lon in track.trajectory:
-                traj_rows.append({"float_id": fid, "model": model, "t": t, "lat": lat, "lon": lon})
+            for t, lat, lon, depth in track.trajectory:
+                traj_rows.append({
+                    "float_id": fid, "model": model, "t": t, "lat": lat, "lon": lon, "depth": depth,
+                })
 
     surf_rows: list[dict] = []
     for fid, row in floats_db.items():

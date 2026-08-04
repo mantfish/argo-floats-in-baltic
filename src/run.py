@@ -54,13 +54,14 @@ def _load_config(config_path: Path | None = None) -> dict:
 def _build_globals(cfg: dict) -> None:
     """Populate module-level constants from a loaded config dict."""
     global MODELS, SHADOW_MODELS, DEAD_THRESHOLD, OVERDUE_DAYS, STORE_DIR, REGION
-    global ARGO_CACHE_DIR, FCOO_CACHE_DIR, RECENT_CYCLES_FOR_VOTE
+    global ARGO_CACHE_DIR, FCOO_CACHE_DIR, RECENT_CYCLES_FOR_VOTE, NEXT_SURFACING_GRACE_HOURS
 
     MODELS                  = data_handler.MODELS
     SHADOW_MODELS           = tuple(f"{m}{data_handler.SHADOW_SUFFIX}" for m in MODELS)
     DEAD_THRESHOLD          = cfg["thresholds"]["dead_after_missed_pulls"]
     OVERDUE_DAYS            = cfg["thresholds"]["overdue_days"]
     RECENT_CYCLES_FOR_VOTE  = cfg["thresholds"]["recent_cycles_for_vote"]
+    NEXT_SURFACING_GRACE_HOURS = cfg["thresholds"]["next_surfacing_grace_hours"]
     STORE_DIR               = Path(cfg["paths"]["store_dir"])
     ARGO_CACHE_DIR          = Path(cfg["paths"]["argo_cache_dir"])
     FCOO_CACHE_DIR          = Path(cfg["paths"]["fcoo_cache_dir"])
@@ -91,6 +92,7 @@ SHADOW_MODELS           = tuple(f"{m}{data_handler.SHADOW_SUFFIX}" for m in MODE
 DEAD_THRESHOLD         = 5
 OVERDUE_DAYS           = 10.0
 RECENT_CYCLES_FOR_VOTE = 5
+NEXT_SURFACING_GRACE_HOURS = 12.0
 STORE_DIR              = Path("data/store")
 ARGO_CACHE_DIR         = Path("data/argo_cache")
 FCOO_CACHE_DIR         = Path("data/fcoo_cache")
@@ -197,7 +199,7 @@ def _active_bounding_box(floats_db: dict[str, FloatRow], fallback: Region) -> Re
         lons.append(lon)
         for track in row.models.values():
             if track.trajectory:
-                _, tlat, tlon = track.trajectory[-1]
+                _, tlat, tlon, _ = track.trajectory[-1]
                 lats.append(tlat)
                 lons.append(tlon)
 
@@ -277,8 +279,10 @@ def _extend_trajectories(floats_db: dict[str, FloatRow]) -> list[dict]:
                     row.models.pop(track_key, None)
                     continue
                 if track_key not in row.models:
+                    # Depth 0.0 -- a real anchor is always a real surfacing,
+                    # i.e. at the surface.
                     row.models[track_key] = ModelTrack(
-                        trajectory=[(real_anchor_time, real_anchor_lat, real_anchor_lon)]
+                        trajectory=[(real_anchor_time, real_anchor_lat, real_anchor_lon, 0.0)]
                     )
 
                 track = row.models[track_key]
@@ -290,8 +294,8 @@ def _extend_trajectories(floats_db: dict[str, FloatRow]) -> list[dict]:
                     track.missed_model_pulls += 1
                     continue
 
-                tip_time, tip_lat, tip_lon = track.trajectory[-1]
-                anchor_time, anchor_lat, anchor_lon = track.trajectory[0]
+                tip_time, tip_lat, tip_lon, _tip_depth = track.trajectory[-1]
+                anchor_time, anchor_lat, anchor_lon, _anchor_depth = track.trajectory[0]
 
                 try:
                     new_points = simulate.simulate_cycle(
@@ -318,7 +322,9 @@ def _extend_trajectories(floats_db: dict[str, FloatRow]) -> list[dict]:
                 track.missed_model_pulls = 0
                 track.trajectory.extend(new_points)
 
-                surf_time = simulate.next_surfacing(anchor_time, row.cycle_action, now)
+                surf_time = simulate.next_surfacing(
+                    anchor_time, row.cycle_action, now, grace_hours=NEXT_SURFACING_GRACE_HOURS
+                )
                 surf_pos = simulate.lookup_position(track.trajectory, surf_time)
                 if surf_pos is not None:
                     forecast_rows.append({
@@ -424,13 +430,14 @@ def _reconcile_with_argo(
         for model in (*MODELS, *SHADOW_MODELS):
             if model not in row.models:
                 continue
-            for t, lat, lon in row.models[model].trajectory:
+            for t, lat, lon, depth in row.models[model].trajectory:
                 if t <= real_time:
                     leg_history_rows.append({
                         "float_id": float_id, "model": model, "leg_end_time": real_time,
-                        "t": t, "lat": lat, "lon": lon,
+                        "t": t, "lat": lat, "lon": lon, "depth": depth,
                     })
-            row.models[model].trajectory = [(real_time, real_lat, real_lon)]
+            # Depth 0.0 -- the reset anchor is the real surfacing itself, at the surface.
+            row.models[model].trajectory = [(real_time, real_lat, real_lon, 0.0)]
             # missed_model_pulls intentionally NOT reset here -- it tracks model-feed
             # staleness and should only clear when model data actually arrives in
             # _extend_trajectories, not on a real-float surfacing event.
@@ -532,7 +539,8 @@ def _build_new_float_row(float_id: str, pull: ArgoPull) -> FloatRow:
         missed_pulls=0,
         is_dead=False,
         models={
-            m: ModelTrack(trajectory=[(last_time, last_lat, last_lon)])
+            # Depth 0.0 -- a fresh registration's anchor is a real surfacing, at the surface.
+            m: ModelTrack(trajectory=[(last_time, last_lat, last_lon, 0.0)])
             for m in (*MODELS, *SHADOW_MODELS)
         },
         surfacing_history=surfacing_history,
@@ -654,7 +662,7 @@ def _last_timestamp(model_data) -> datetime:
     return pd.Timestamp(model_data.time.values[-1]).to_pydatetime().replace(tzinfo=None)
 
 
-def _lookup(trajectory: list[tuple[datetime, float, float]], t: datetime):
+def _lookup(trajectory: list[tuple[datetime, float, float, float]], t: datetime):
     return simulate.lookup_position(trajectory, t)
 
 

@@ -166,12 +166,18 @@ def export_floats(
             if surf_pos is None and track.trajectory:
                 # Trajectory doesn't reach the next surfacing time yet --
                 # use last known point as best-available estimate.
-                _, surf_lat, surf_lon = track.trajectory[-1]
+                _, surf_lat, surf_lon, _ = track.trajectory[-1]
                 surf_pos = (surf_lat, surf_lon)
 
             history = [
-                {"t": t.isoformat(), "lat": round(lat, 5), "lon": round(lon, 5)}
-                for t, lat, lon in track.trajectory
+                {
+                    "t": t.isoformat(), "lat": round(lat, 5), "lon": round(lon, 5),
+                    # None, not NaN -- json.dumps emits NaN as a bare (non-standard)
+                    # token that breaks JSON.parse on the frontend. Only trajectory
+                    # points saved before this field existed lack a real depth.
+                    "depth": None if pd.isna(depth) else round(depth, 2),
+                }
+                for t, lat, lon, depth in track.trajectory
                 if t >= cutoff
             ]
 
