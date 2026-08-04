@@ -146,14 +146,16 @@ def model_domain_bounds(model_data: xr.Dataset) -> tuple[float, float, float, fl
     "lat"/"lon" coords (cmems), and fcoo's merged dual-grid coords
     ("lat_dk"/"lat_idk" etc, no plain "lat") -- callers that just need the
     overall domain extent (e.g. run.py's in-domain check) shouldn't need to
-    know which schema they got.
+    know which schema they got. Either fcoo grid coord can be absent if
+    _fetch_fcoo could only fetch one of dk/idk this round -- uses whichever
+    is present.
     """
     if "lat" in model_data.coords:
         lat = model_data["lat"].values
         lon = model_data["lon"].values
     else:
-        lat = np.concatenate([model_data["lat_dk"].values, model_data["lat_idk"].values])
-        lon = np.concatenate([model_data["lon_dk"].values, model_data["lon_idk"].values])
+        lat = np.concatenate([model_data[c].values for c in ("lat_dk", "lat_idk") if c in model_data.coords])
+        lon = np.concatenate([model_data[c].values for c in ("lon_dk", "lon_idk") if c in model_data.coords])
     return float(lat.min()), float(lat.max()), float(lon.min()), float(lon.max())
 
 
@@ -398,28 +400,55 @@ def _fetch_fcoo(region: Region) -> xr.Dataset:
     since 'idk' (finer, inner-Danish-waters only) is not a subgrid of 'dk'
     (coarser, full domain) -- simulate.build_interpolators resolves the two
     into a single current field at query time (idk preferred, dk fallback).
+
+    dk and idk are fetched independently and a failure in one does NOT
+    discard the other -- 'idk' is a small array per timestep but was
+    observed live to hit the intermittent OPeNDAP corruption/connection-drop
+    failure mode (_load_fcoo_var_chunked) more often than 'dk', and floats
+    outside idk's small inner-Danish-waters footprint never need it anyway
+    (see simulate._build_fcoo_interpolators's idk-preferred/dk-fallback
+    resolution). Previously an idk failure raised out of this whole
+    function, throwing away an already-successful dk fetch and freezing
+    every FCOO track for the round -- including floats that only ever
+    resolved through dk. Only raises if *both* grids fail.
     """
     if "fcoo" not in _fcoo_ds_cache:
         url = _get_fcoo_z3d_url()
-        dk = _build_fcoo_dataset(url, _FCOO_GRID_DK, region)
-        idk = _build_fcoo_dataset(url, _FCOO_GRID_IDK, region)
-        _fcoo_ds_cache["fcoo"] = xr.Dataset(
-            {
-                "u_dk":  (["time", "depth_dk", "lat_dk", "lon_dk"], dk["u"].values),
-                "v_dk":  (["time", "depth_dk", "lat_dk", "lon_dk"], dk["v"].values),
-                "u_idk": (["time", "depth_idk", "lat_idk", "lon_idk"], idk["u"].values),
-                "v_idk": (["time", "depth_idk", "lat_idk", "lon_idk"], idk["v"].values),
-            },
-            coords={
-                "time":      dk["time"].values,
-                "depth_dk":  dk["depth"].values,
-                "lat_dk":    dk["lat"].values,
-                "lon_dk":    dk["lon"].values,
-                "depth_idk": idk["depth"].values,
-                "lat_idk":   idk["lat"].values,
-                "lon_idk":   idk["lon"].values,
-            },
-        )
+
+        dk = idk = None
+        dk_err = idk_err = None
+        try:
+            dk = _build_fcoo_dataset(url, _FCOO_GRID_DK, region)
+        except Exception as e:
+            dk_err = e
+            logger.warning("FCOO dk grid fetch failed -- continuing with idk alone if it succeeds", exc_info=True)
+        try:
+            idk = _build_fcoo_dataset(url, _FCOO_GRID_IDK, region)
+        except Exception as e:
+            idk_err = e
+            logger.warning("FCOO idk grid fetch failed -- continuing with dk alone if it succeeded", exc_info=True)
+
+        if dk is None and idk is None:
+            raise RuntimeError(
+                f"FCOO: both dk and idk grid fetches failed (dk: {dk_err!r}, idk: {idk_err!r})"
+            )
+
+        data_vars: dict = {}
+        coords: dict = {"time": (dk if dk is not None else idk)["time"].values}
+        if dk is not None:
+            data_vars["u_dk"] = (["time", "depth_dk", "lat_dk", "lon_dk"], dk["u"].values)
+            data_vars["v_dk"] = (["time", "depth_dk", "lat_dk", "lon_dk"], dk["v"].values)
+            coords["depth_dk"] = dk["depth"].values
+            coords["lat_dk"] = dk["lat"].values
+            coords["lon_dk"] = dk["lon"].values
+        if idk is not None:
+            data_vars["u_idk"] = (["time", "depth_idk", "lat_idk", "lon_idk"], idk["u"].values)
+            data_vars["v_idk"] = (["time", "depth_idk", "lat_idk", "lon_idk"], idk["v"].values)
+            coords["depth_idk"] = idk["depth"].values
+            coords["lat_idk"] = idk["lat"].values
+            coords["lon_idk"] = idk["lon"].values
+
+        _fcoo_ds_cache["fcoo"] = xr.Dataset(data_vars, coords=coords)
     return _fcoo_ds_cache["fcoo"]
 
 

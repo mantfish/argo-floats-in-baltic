@@ -87,7 +87,7 @@ def xy_to_latlon(x: float, y: float, anchor_lat: float, anchor_lon: float) -> tu
 
 def _grid_interpolators(
     t_s: np.ndarray, depth: np.ndarray, lat: np.ndarray, lon: np.ndarray,
-    u_arr: np.ndarray, v_arr: np.ndarray,
+    u_arr: np.ndarray, v_arr: np.ndarray, label: str = "",
 ) -> tuple[Callable, Callable, tuple[tuple[float, float], tuple[float, float], tuple[float, float]]]:
     """
     Build (interp_u, interp_v, bounds) for one regular (time, depth, lat, lon)
@@ -102,6 +102,13 @@ def _grid_interpolators(
     u_arr = u_arr.astype(np.float32)
     v_arr = v_arr.astype(np.float32)
 
+    # Remember which cells were NaN (land/mask) before the zero-fill below,
+    # so _warn_on_zero_fill can tell "grid says genuinely no current" apart
+    # from "query landed on a masked cell that reads as 0.0" -- otherwise
+    # both look identical to a caller, and a persistent masked-cell query
+    # (e.g. a float near a coastline) produces silent exact-zero advection.
+    masked = np.isnan(u_arr) | np.isnan(v_arr)
+
     # Replace NaN (land/mask) with 0 so interpolation doesn't propagate NaNs
     u_arr = np.where(np.isnan(u_arr), np.float32(0.0), u_arr)
     v_arr = np.where(np.isnan(v_arr), np.float32(0.0), v_arr)
@@ -111,6 +118,7 @@ def _grid_interpolators(
         depth = depth[::-1]
         u_arr = u_arr[:, ::-1, :, :]
         v_arr = v_arr[:, ::-1, :, :]
+        masked = masked[:, ::-1, :, :]
 
     interp_u = RegularGridInterpolator(
         (t_s, depth, lat, lon), u_arr,
@@ -120,10 +128,91 @@ def _grid_interpolators(
         (t_s, depth, lat, lon), v_arr,
         method="linear", bounds_error=False, fill_value=0.0,
     )
+    interp_u, interp_v = _warn_on_zero_fill(interp_u, interp_v, t_s, depth, lat, lon, masked, label)
     bounds = ((float(depth.min()), float(depth.max())),
               (float(lat.min()), float(lat.max())),
               (float(lon.min()), float(lon.max())))
     return interp_u, interp_v, bounds
+
+
+def _warn_on_zero_fill(
+    interp_u: Callable, interp_v: Callable,
+    t_s: np.ndarray, depth: np.ndarray, lat: np.ndarray, lon: np.ndarray,
+    masked: np.ndarray, label: str,
+) -> tuple[Callable, Callable]:
+    """
+    Wrap a grid's raw (u, v) callables so a query whose time or lat/lon
+    falls outside this grid's real footprint, or whose nearest real cell
+    was NaN (land/mask) before being zero-filled in _grid_interpolators,
+    logs one warning each -- the counterpart to _taper_to_seabed's existing
+    depth-overrun warning, which only covers the deep-query case. Without
+    this, a query that always resolves to fill_value=0.0 or a masked cell
+    is indistinguishable from a real "model predicts zero current" result
+    at every call site -- exactly the ambiguity behind an fcoo track
+    showing suspiciously frequent exact-zero drift.
+
+    The time check matters most for FCOO: each fetched GETM run only
+    covers a ~55h forecast horizon (56 hourly steps), refreshed every 6h,
+    against a float cycle that can run close to that same length -- once a
+    simulated trajectory's clock runs past the fetched data's last
+    timestamp, every subsequent step silently gets zero velocity here
+    rather than an error, freezing the trajectory's position while its
+    timestamps keep advancing (simulate_cycle has no "stop" condition).
+
+    The masked-cell check uses the grid's first time slice as a proxy for
+    the (in practice time-invariant) land mask -- fine for a one-time
+    diagnostic warning, not meant to be exact per-timestep.
+    """
+    t_min, t_max = float(t_s.min()), float(t_s.max())
+    lat_min, lat_max = float(lat.min()), float(lat.max())
+    lon_min, lon_max = float(lon.min()), float(lon.max())
+    warned_time = False
+    warned_oob = False
+    warned_masked = False
+
+    def _wrap(interp_raw: Callable) -> Callable:
+        def query(rows):
+            nonlocal warned_time, warned_oob, warned_masked
+            rows = np.asarray(rows, dtype=np.float64)
+            out = np.asarray(interp_raw(rows), dtype=np.float64)
+
+            time_oob = (rows[:, 0] < t_min) | (rows[:, 0] > t_max)
+            if np.any(time_oob) and not warned_time:
+                over_h = (float(rows[time_oob, 0].max()) - t_max) / 3600.0
+                logger.warning(
+                    "%s: query time outside fetched forecast window "
+                    "(%.1fh past the last available timestep) -- "
+                    "fill_value=0.0 used from there on",
+                    label, over_h,
+                )
+                warned_time = True
+
+            oob = (time_oob |
+                   (rows[:, 2] < lat_min) | (rows[:, 2] > lat_max) |
+                   (rows[:, 3] < lon_min) | (rows[:, 3] > lon_max))
+            if np.any(oob & ~time_oob) and not warned_oob:
+                logger.warning(
+                    "%s: query lat/lon outside grid footprint (lat "
+                    "%.4f-%.4f, lon %.4f-%.4f) -- fill_value=0.0 used",
+                    label, lat_min, lat_max, lon_min, lon_max,
+                )
+                warned_oob = True
+
+            in_bounds = ~oob
+            if not warned_masked and np.any(in_bounds):
+                zi = np.clip(np.searchsorted(depth, rows[in_bounds, 1]), 0, len(depth) - 1)
+                yi = np.clip(np.searchsorted(lat, rows[in_bounds, 2]), 0, len(lat) - 1)
+                xi = np.clip(np.searchsorted(lon, rows[in_bounds, 3]), 0, len(lon) - 1)
+                if np.any(masked[0, zi, yi, xi]):
+                    logger.warning(
+                        "%s: query landed on a masked/land grid cell -- "
+                        "treated as 0.0 current", label,
+                    )
+                    warned_masked = True
+            return out
+        return query
+
+    return _wrap(interp_u), _wrap(interp_v)
 
 
 def _taper_to_seabed(
@@ -194,7 +283,8 @@ def _build_fcoo_interpolators(
 ) -> tuple[Callable, Callable]:
     """
     Build combined interp_u/interp_v for the unified 'fcoo' model, which
-    carries two grids sharing one time coordinate (see data_handler._fetch_fcoo):
+    normally carries two grids sharing one time coordinate (see
+    data_handler._fetch_fcoo):
         idk -- finer, inner-Danish-waters only, 6 depth levels to 50 m
         dk  -- coarser, full domain, 10 depth levels to 200 m
     idk is preferred: a query point inside idk's (depth, lat, lon) bounding
@@ -202,30 +292,49 @@ def _build_fcoo_interpolators(
     called with the same (t, z, lat, lon) row so they agree on which grid to
     use -- true for every call site today (simulate_cycle._query_uv always
     queries u and v at the same point).
+
+    Either grid can be missing from `model_data` if _fetch_fcoo could only
+    fetch one of dk/idk this round -- falls back to using whichever grid is
+    present on its own rather than requiring both. A float that never
+    resolves through idk anyway (outside its small inner-Danish-waters
+    footprint) is then unaffected by an idk-only failure.
     """
-    idk_u, idk_v, idk_bounds = _grid_interpolators(
-        t_s,
-        model_data["depth_idk"].values.astype(np.float64),
-        model_data["lat_idk"].values.astype(np.float64),
-        model_data["lon_idk"].values.astype(np.float64),
-        model_data["u_idk"].values,
-        model_data["v_idk"].values,
-    )
-    dk_u, dk_v, dk_bounds = _grid_interpolators(
-        t_s,
-        model_data["depth_dk"].values.astype(np.float64),
-        model_data["lat_dk"].values.astype(np.float64),
-        model_data["lon_dk"].values.astype(np.float64),
-        model_data["u_dk"].values,
-        model_data["v_dk"].values,
-    )
-    # idk itself never needs tapering: _in_idk_bounds (below) already
-    # redirects any query outside idk's own 50m range to dk before it would
-    # hit idk's limit -- the taper only becomes relevant once dk's deeper
-    # range is also exceeded.
-    dk_u, dk_v = _taper_to_seabed(
-        dk_u, dk_v, dk_bounds[0][1], bathy_interp, f"{float_id} fcoo_dk".strip()
-    )
+    has_dk = "u_dk" in model_data.data_vars
+    has_idk = "u_idk" in model_data.data_vars
+
+    if has_idk:
+        idk_u, idk_v, idk_bounds = _grid_interpolators(
+            t_s,
+            model_data["depth_idk"].values.astype(np.float64),
+            model_data["lat_idk"].values.astype(np.float64),
+            model_data["lon_idk"].values.astype(np.float64),
+            model_data["u_idk"].values,
+            model_data["v_idk"].values,
+            label=f"{float_id} fcoo_idk".strip(),
+        )
+    if has_dk:
+        dk_u, dk_v, dk_bounds = _grid_interpolators(
+            t_s,
+            model_data["depth_dk"].values.astype(np.float64),
+            model_data["lat_dk"].values.astype(np.float64),
+            model_data["lon_dk"].values.astype(np.float64),
+            model_data["u_dk"].values,
+            model_data["v_dk"].values,
+            label=f"{float_id} fcoo_dk".strip(),
+        )
+        # idk itself never needs tapering: _in_idk_bounds (below) already
+        # redirects any query outside idk's own 50m range to dk before it
+        # would hit idk's limit -- the taper only becomes relevant once
+        # dk's deeper range is also exceeded.
+        dk_u, dk_v = _taper_to_seabed(
+            dk_u, dk_v, dk_bounds[0][1], bathy_interp, f"{float_id} fcoo_dk".strip()
+        )
+
+    if not has_dk:
+        return idk_u, idk_v
+    if not has_idk:
+        return dk_u, dk_v
+
     (z0, z1), (lat0, lat1), (lon0, lon1) = idk_bounds
 
     def _in_idk_bounds(z: float, lat: float, lon: float) -> bool:
@@ -261,9 +370,11 @@ def build_interpolators(
         vars : u, v  (m/s, eastward / northward)
     For the merged FCOO schema (dk + idk, see data_handler._fetch_fcoo):
         dims : time, depth_dk, lat_dk, lon_dk, depth_idk, lat_idk, lon_idk
-        vars : u_dk, v_dk, u_idk, v_idk
-    detected via presence of "u_dk" -- resolved into a single combined
-    interpolator pair (idk preferred, dk fallback; see _build_fcoo_interpolators).
+        vars : u_dk, v_dk, u_idk, v_idk -- either grid's vars/dims may be
+        absent if _fetch_fcoo could only fetch one of them this round
+    detected via presence of "u_dk" or "u_idk" -- resolved into a single
+    combined interpolator pair (idk preferred, dk fallback, or whichever
+    grid is actually present; see _build_fcoo_interpolators).
 
     Each callable takes a 2-D array of [t_s, depth_m, lat, lon] rows
     and returns one float per row. Out-of-bounds *lat/lon* queries return
@@ -275,7 +386,7 @@ def build_interpolators(
     """
     t_s = model_data["time"].values.astype("datetime64[s]").astype(np.float64)
 
-    if "u_dk" in model_data.data_vars:
+    if "u_dk" in model_data.data_vars or "u_idk" in model_data.data_vars:
         return _build_fcoo_interpolators(model_data, t_s, bathy_interp, float_id)
 
     depth = model_data["depth"].values.astype(np.float64)
@@ -284,7 +395,9 @@ def build_interpolators(
     u_arr = model_data["u"].values
     v_arr = model_data["v"].values
 
-    interp_u, interp_v, bounds = _grid_interpolators(t_s, depth, lat, lon, u_arr, v_arr)
+    interp_u, interp_v, bounds = _grid_interpolators(
+        t_s, depth, lat, lon, u_arr, v_arr, label=f"{float_id} cmems".strip()
+    )
     interp_u, interp_v = _taper_to_seabed(
         interp_u, interp_v, bounds[0][1], bathy_interp, f"{float_id} cmems".strip()
     )
@@ -292,11 +405,12 @@ def build_interpolators(
 
 
 def lookup_position(
-    trajectory: list[tuple[datetime, float, float]],
+    trajectory: list[tuple[datetime, float, float, float]],
     t: datetime,
 ) -> tuple[float, float] | None:
     """
-    (lat, lon) at time `t`, nearest point from `trajectory`.
+    (lat, lon) at time `t`, nearest point from `trajectory`. Depth (index 3
+    of each point) is ignored here -- this is a horizontal-position lookup.
     Returns None if `t` falls outside the trajectory's covered range.
     """
     if not trajectory:
@@ -308,18 +422,56 @@ def lookup_position(
     return trajectory[best][1], trajectory[best][2]
 
 
+# How long past our own estimate of a cycle's communicating-window start we
+# tolerate before concluding that window is over and jumping a full cycle
+# ahead (see next_surfacing's docstring for the bug this fixes). Not a
+# business policy threshold like OVERDUE_DAYS/DEAD_THRESHOLD (those decide
+# which floats to track/score); this is a numerical-robustness parameter of
+# the phase-recovery formula itself, so it defaults here rather than living
+# in run.py -- run.py's own call site still overrides it explicitly via
+# config (NEXT_SURFACING_GRACE_HOURS), same pattern as
+# FloatRow.is_overdue's threshold_days default vs. run.py's OVERDUE_DAYS.
+DEFAULT_NEXT_SURFACING_GRACE_HOURS = 12.0
+
+
 def next_surfacing(
     anchor_time: datetime,
     control_action: ControlAction,
     now: datetime,
+    grace_hours: float = DEFAULT_NEXT_SURFACING_GRACE_HOURS,
 ) -> datetime:
     """
     Next time after `now` that the float re-enters the communicating (surfaced)
     phase of its repeating dive cycle.
 
-    Reconstructs total_cycle_s exactly as simulate_cycle does, then finds the
-    smallest k >= 0 such that
-        anchor_time + k * total_cycle_s + (descent_plus_parking_s + ascent_s) > now
+    Reconstructs total_cycle_s exactly as simulate_cycle does, then locates
+    the most recent cycle boundary
+        boundary(k) = anchor_time + k * total_cycle_s + (descent_plus_parking_s + ascent_s)
+    at or before `now`.
+
+    BUG THIS FIXES: real per-cycle duration jitters by a few hours around the
+    median-voted cycle_hours estimate (design decision 9) -- a real float
+    might run 108h one cycle and 120h the next around a 114h median. The old
+    code found the smallest k with boundary(k) > now, full stop. The instant
+    `now` ticked past *our own estimate* of boundary(k) -- even by a minute,
+    even though the real float hadn't actually surfaced yet -- it concluded
+    that whole communicating window must already be over and jumped straight
+    to boundary(k+1), a FULL CYCLE later (visible in section 3 of
+    prediction_diagnostics.ipynb as `timing_error_h` spikes of ~one cycle
+    length: ~100h+ for a ~114h-cycle float, ~20-50h for a ~49h-cycle float).
+    In plain terms: the model would go from "surfacing any minute now" to
+    "not for another 4-5 days" over the course of a single missed minute,
+    just because the float was running a little late.
+
+    THE FIX: once `now` is within `grace_hours` of boundary(k), keep
+    predicting boundary(k) itself (clamped to just after `now` if that
+    boundary is already in the past) instead of committing to boundary(k+1)
+    -- i.e. "any time now" rather than "not for another full cycle." Only
+    once the overrun exceeds `grace_hours` do we conclude the window is
+    genuinely over and advance to boundary(k+1). This stays fully
+    deterministic (no probability distributions, no covariance -- design
+    decision 10 still holds); it only changes the threshold for how long we
+    keep betting on the current cycle before giving up on it.
     """
     target_depth = control_action.target_depth or 0.0
     descent_s             = target_depth / control_action.descent_speed_ms if target_depth > 0 else 0.0
@@ -330,12 +482,28 @@ def next_surfacing(
     surface_offset        = descent_plus_parking_s + ascent_s   # communicating starts here
 
     elapsed = (now - anchor_time).total_seconds()
-    # Smallest k >= 0 such that k * total_cycle_s + surface_offset > elapsed
-    k = max(0, math.ceil((elapsed - surface_offset + 1e-6) / total_cycle_s))
-    t_surface = anchor_time + timedelta(seconds=k * total_cycle_s + surface_offset)
-    # Guard against floating-point edge cases
+    grace_s = grace_hours * 3600.0
+
+    # Largest k >= 0 with boundary(k) <= elapsed (i.e. the most recently
+    # reached -- or still-pending, if elapsed < surface_offset -- predicted
+    # window-open time).
+    k = max(0, math.floor((elapsed - surface_offset) / total_cycle_s))
+    boundary_s = surface_offset + k * total_cycle_s
+    overrun_s = elapsed - boundary_s  # negative if boundary(k) is still in the future
+
+    if overrun_s <= grace_s:
+        # Either haven't reached this cycle's window yet, or recently passed
+        # our own estimate of it -- keep betting on this cycle.
+        t_surface = anchor_time + timedelta(seconds=boundary_s)
+    else:
+        # Genuinely past the grace period -- this window is over.
+        t_surface = anchor_time + timedelta(seconds=boundary_s + total_cycle_s)
+
+    # Contract is "next time AFTER now" -- both branches above can land at or
+    # before `now` (the grace branch deliberately does, to report "any time
+    # now" rather than a stale exact instant). Clamp forward by an epsilon.
     if t_surface <= now:
-        t_surface = anchor_time + timedelta(seconds=(k + 1) * total_cycle_s + surface_offset)
+        t_surface = now + timedelta(seconds=1)
     return t_surface
 
 
@@ -365,7 +533,7 @@ def simulate_cycle(
     bathy_interp: Optional[Callable[[float, float], float]] = None,
     float_id: str = "",
     force_drift: bool = False,
-) -> list[tuple[datetime, float, float]]:
+) -> list[tuple[datetime, float, float, float]]:
     """
     Extend a trajectory forward from `tip_time` to `until_time`, using
     `model_data`'s currents and `control_action`'s dive profile.
@@ -400,8 +568,11 @@ def simulate_cycle(
         (data_handler.trim_to_forecast_only) before it reaches here -- this
         function doesn't re-check that.
 
-    Returns points strictly after tip_time as (t, lat, lon) tuples. Caller
-    appends these to the existing trajectory; the tip itself is not
+    Returns points strictly after tip_time as (t, lat, lon, depth) tuples --
+    depth (dbar) is this same phase-recovery formula's own descent/park/
+    ascent number, already computed per-point to decide advection (the
+    park_on_bottom skip below), just also returned now instead of discarded.
+    Caller appends these to the existing trajectory; the tip itself is not
     repeated in the output.
     """
     target_depth = control_action.target_depth or 0.0
@@ -422,7 +593,7 @@ def simulate_cycle(
     elapsed = (tip_time - anchor_time).total_seconds()
     t = tip_time
 
-    points: list[tuple[datetime, float, float]] = []
+    points: list[tuple[datetime, float, float, float]] = []
 
     while t < until_time:
         cycle_elapsed = elapsed % total_cycle_s
@@ -451,6 +622,6 @@ def simulate_cycle(
         t += timedelta(seconds=dt)
         elapsed += dt
         lat, lon = xy_to_latlon(x, y, anchor_lat, anchor_lon)
-        points.append((t, lat, lon))
+        points.append((t, lat, lon, depth))
 
     return points
