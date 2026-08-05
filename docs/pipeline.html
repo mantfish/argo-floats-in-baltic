@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>How This Works — Argo Float Leaderboard</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --paper:    #FFFFFF;
+    --paper-2:  #FFFFFF;
+    --chip:     #F1F1ED;
+    --ink-0:    #16160F;
+    --ink-1:    #44443C;
+    --ink-2:    #8C8C82;
+    --line:     rgba(20,20,15,0.10);
+    --line-hi:  rgba(20,20,15,0.20);
+    --blue:     #147D74;
+    --blue-lt:  #3E5C8A;
+    --coral:    #D6422E;
+    --good:     #1B7A4B;
+    --amber:    #C2872A;
+    --font-sans: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    --font-mono: 'SF Mono', 'Menlo', 'Consolas', monospace;
+  }
+
+  html, body {
+    background: var(--paper);
+    color: var(--ink-0);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .page { position: relative; z-index: 1; max-width: 1100px; margin: 0 auto; padding: 0 32px 96px; }
+
+  code, .mono { font-family: var(--font-mono); font-size: 0.92em; }
+
+  /* ── Header (matches index.html) ── */
+  header { padding: 56px 0 36px; }
+  .header-main {
+    display: flex; align-items: flex-end; justify-content: space-between;
+    gap: 24px; flex-wrap: wrap;
+  }
+  h1 {
+    font-size: clamp(36px, 6vw, 64px);
+    font-weight: 700; color: var(--ink-0);
+    letter-spacing: -0.03em; line-height: 0.95;
+  }
+  .subtitle {
+    font-size: 14px; color: var(--ink-1); margin-top: 18px;
+    max-width: 62ch; line-height: 1.6;
+  }
+  .nav-links { display: flex; gap: 10px; flex-wrap: wrap; }
+  .nav-link {
+    display: inline-flex; align-items: center; gap: 10px;
+    padding: 13px 26px; background: var(--paper); border: 1px solid var(--line-hi);
+    color: var(--ink-0); text-decoration: none; font-size: 13px; font-weight: 600;
+    letter-spacing: 0.06em; text-transform: uppercase;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+    white-space: nowrap; border-radius: 999px;
+  }
+  .nav-link.primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+  .nav-link:hover { background: var(--ink-0); border-color: var(--ink-0); color: #fff; }
+  .nav-link svg { width: 14px; height: 14px; flex-shrink: 0; }
+  .header-rule { height: 2px; background: var(--ink-0); margin-top: 32px; }
+
+  .updated-note {
+    font-size: 11px; color: var(--ink-2); margin-top: 14px;
+    letter-spacing: 0.03em;
+  }
+  .updated-note code { color: var(--ink-1); }
+
+  /* ── Section label (matches index.html) ── */
+  .section-label {
+    font-size: 11px; letter-spacing: 0.16em; color: var(--ink-2);
+    text-transform: uppercase; margin: 56px 0 18px; font-weight: 500;
+    display: flex; align-items: baseline; gap: 12px;
+  }
+  .section-label::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+
+  p.body { color: var(--ink-1); line-height: 1.65; max-width: 74ch; }
+  p.body + p.body { margin-top: 14px; }
+  .body strong { color: var(--ink-0); font-weight: 600; }
+
+  ul.body-list { margin: 12px 0 0 0; padding-left: 20px; color: var(--ink-1); line-height: 1.65; max-width: 74ch; }
+  ul.body-list li { margin-bottom: 8px; }
+  ul.body-list li::marker { color: var(--ink-2); }
+
+  /* ── Cards / panels ── */
+  .panel {
+    background: var(--paper-2); border: 1px solid var(--line);
+    padding: 26px 28px; border-radius: 14px;
+    box-shadow: 0 1px 2px rgba(20,20,15,0.04);
+  }
+  .panel-title {
+    font-size: 11px; color: var(--ink-2); letter-spacing: 0.08em;
+    text-transform: uppercase; margin-bottom: 18px; font-weight: 500;
+  }
+
+  /* ── Diagram ── */
+  .diagram-wrap { overflow-x: auto; }
+  .diagram-wrap svg { display: block; min-width: 760px; width: 100%; height: auto; }
+  .dgm-box rect { fill: var(--paper); stroke: var(--line-hi); stroke-width: 1.3; }
+  .dgm-box.accent rect { fill: var(--chip); stroke: var(--ink-0); }
+  .dgm-box.compute rect { stroke: var(--blue); }
+  .dgm-box text { font-family: var(--font-sans); fill: var(--ink-0); }
+  .dgm-box .label { font-size: 12.5px; font-weight: 700; }
+  .dgm-box .sub { font-size: 10.5px; fill: var(--ink-2); font-weight: 500; }
+  .dgm-arrow { stroke: var(--ink-2); stroke-width: 1.4; fill: none; }
+  .dgm-arrowhead { fill: var(--ink-2); }
+  .dgm-group-label {
+    font-family: var(--font-sans); font-size: 10px; fill: var(--ink-2);
+    letter-spacing: 0.1em; text-transform: uppercase; font-weight: 600;
+  }
+
+  /* ── Numbered step list ── */
+  .steps { display: flex; flex-direction: column; }
+  .step {
+    display: grid; grid-template-columns: 44px 1fr; gap: 18px;
+    padding: 20px 0; border-bottom: 1px solid var(--line);
+  }
+  .step:last-child { border-bottom: none; }
+  .step-num {
+    width: 30px; height: 30px; border-radius: 50%;
+    background: var(--ink-0); color: #fff; font-size: 12px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .step-title { font-size: 14px; font-weight: 700; color: var(--ink-0); margin-bottom: 5px; }
+  .step-title code { font-weight: 700; color: var(--blue); font-size: 13px; }
+  .step-desc { font-size: 13px; color: var(--ink-1); line-height: 1.6; max-width: 70ch; }
+  .step-desc code { background: var(--chip); padding: 1px 5px; border-radius: 4px; color: var(--ink-0); }
+
+  /* ── Tables ── */
+  .table-wrap {
+    background: var(--paper-2); border: 1px solid var(--line);
+    overflow: hidden; border-radius: 14px; box-shadow: 0 1px 2px rgba(20,20,15,0.04);
+    overflow-x: auto;
+  }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead tr { border-bottom: 1px solid var(--line-hi); }
+  th {
+    text-align: left; padding: 14px 20px; font-size: 10px; letter-spacing: 0.1em;
+    color: var(--ink-2); text-transform: uppercase; font-weight: 600; white-space: nowrap;
+  }
+  tbody tr { border-bottom: 1px solid var(--line); }
+  tbody tr:last-child { border-bottom: none; }
+  td { padding: 13px 20px; color: var(--ink-1); vertical-align: top; }
+  td.key { color: var(--ink-0); font-weight: 600; white-space: nowrap; font-family: var(--font-mono); font-size: 12.5px; }
+  td code { background: var(--chip); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+
+  /* ── Two-column grid ── */
+  .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+
+  /* ── Field list (data model) ── */
+  .field-list { display: flex; flex-direction: column; gap: 10px; }
+  .field-row { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+  .field-name { font-family: var(--font-mono); font-size: 12.5px; color: var(--ink-0); font-weight: 700; white-space: nowrap; }
+  .field-type { font-family: var(--font-mono); font-size: 11.5px; color: var(--blue-lt); white-space: nowrap; }
+  .field-desc { font-size: 12.5px; color: var(--ink-1); line-height: 1.5; }
+
+  .chip-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+  .chip-tag {
+    font-size: 10.5px; padding: 3px 10px; background: var(--chip); border-radius: 999px;
+    color: var(--ink-1); font-weight: 500; letter-spacing: 0.02em;
+  }
+
+  footer {
+    border-top: 1px solid var(--line); padding: 28px 0 0; font-size: 11px;
+    color: var(--ink-2); letter-spacing: 0.03em; display: flex; justify-content: space-between;
+    align-items: center; gap: 16px; flex-wrap: wrap; margin-top: 72px;
+  }
+  footer a { color: var(--blue); text-decoration: none; font-weight: 600; }
+  footer a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header>
+    <div class="header-main">
+      <div>
+        <h1>How This<br>Works</h1>
+        <div class="subtitle">
+          What the leaderboard actually does, end to end: where the data comes from,
+          which function does what, and what gets written where — for anyone who wants
+          to check the machinery, not just the score.
+        </div>
+      </div>
+      <div class="nav-links">
+        <a href="index.html" class="nav-link primary">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"/></svg>
+          Leaderboard
+        </a>
+        <a href="map.html" class="nav-link">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6-3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/></svg>
+          Map
+        </a>
+      </div>
+    </div>
+    <div class="header-rule"></div>
+    <div class="updated-note">
+      This page describes <code>src/run.py</code>, <code>data_handler.py</code>,
+      <code>simulate.py</code>, <code>cycle_extractor.py</code>, <code>float_store.py</code>
+      and <code>web_export.py</code> as of the current <code>main</code> branch. It's
+      maintained by hand alongside those files — if you change what a function does,
+      update the matching section here in the same commit.
+    </div>
+  </header>
+
+  <!-- ══════════════════════ WHAT THIS IS ══════════════════════ -->
+  <div class="section-label">What This Measures</div>
+  <p class="body">
+    This is a <strong>forecast-skill scoreboard</strong>, not a float-piloting system.
+    For every Argo profiling float in Danish/Baltic waters, the pipeline runs one
+    simulated trajectory per ocean-current model (<strong>CMEMS</strong> Baltic
+    Sea Analysis &amp; Forecast, <strong>FCOO</strong>/GETM), advecting a virtual copy
+    of the float forward using that model's currents and the float's own dive
+    profile. When the real float actually surfaces and reports its GPS position,
+    each model's simulated position at that exact timestamp is compared against
+    the truth, and the distance between them is logged as that model's error for
+    that event.
+  </p>
+  <p class="body">
+    There is no state estimation, no covariance, and nothing here controls a real
+    float — it's a deterministic replay used purely to see, retrospectively, which
+    current model predicts float drift better.
+  </p>
+
+  <!-- ══════════════════════ ARCHITECTURE DIAGRAM ══════════════════════ -->
+  <div class="section-label">Data Flow, End to End</div>
+  <div class="panel diagram-wrap">
+    <svg viewBox="0 0 1020 640" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" class="dgm-arrowhead"/>
+        </marker>
+      </defs>
+
+      <!-- Group label: sources -->
+      <text x="20" y="26" class="dgm-group-label">External data sources</text>
+
+      <!-- Source boxes -->
+      <g class="dgm-box">
+        <rect x="20" y="38" width="220" height="60" rx="10"/>
+        <text x="36" y="64" class="label">CMEMS Marine Service</text>
+        <text x="36" y="82" class="sub">copernicusmarine.subset() — u, v currents</text>
+      </g>
+      <g class="dgm-box">
+        <rect x="260" y="38" width="220" height="60" rx="10"/>
+        <text x="276" y="64" class="label">FCOO GETM (dk / idk)</text>
+        <text x="276" y="82" class="sub">OPeNDAP via pydap — u, v currents</text>
+      </g>
+      <g class="dgm-box">
+        <rect x="500" y="38" width="220" height="60" rx="10"/>
+        <text x="516" y="64" class="label">Argo GDAC</text>
+        <text x="516" y="82" class="sub">argopy + Rtraj.nc / prof.nc per float</text>
+      </g>
+      <g class="dgm-box">
+        <rect x="760" y="38" width="240" height="60" rx="10"/>
+        <text x="776" y="60" class="label">EMODnet D6 bathymetry</text>
+        <text x="776" y="78" class="sub">static file, loaded once (seabed depth)</text>
+      </g>
+
+      <!-- arrows to data_handler.py -->
+      <path d="M130,98 L130,130 Q130,140 140,140 L470,140" class="dgm-arrow" marker-end="url(#arrow)"/>
+      <path d="M370,98 L370,120" class="dgm-arrow" marker-end="url(#arrow)"/>
+      <path d="M610,98 L610,120" class="dgm-arrow" marker-end="url(#arrow)"/>
+      <path d="M880,98 L880,130 Q880,140 870,140 L720,140" class="dgm-arrow" marker-end="url(#arrow)"/>
+
+      <!-- data_handler.py -->
+      <g class="dgm-box accent">
+        <rect x="330" y="140" width="360" height="56" rx="10"/>
+        <text x="510" y="164" class="label" text-anchor="middle">data_handler.py</text>
+        <text x="510" y="182" class="sub" text-anchor="middle">fetch: model currents · Argo population · float history</text>
+      </g>
+
+      <!-- arrow down to run.py -->
+      <path d="M510,196 L510,224" class="dgm-arrow" marker-end="url(#arrow)"/>
+
+      <!-- run.py orchestrator -->
+      <g class="dgm-box">
+        <rect x="290" y="224" width="440" height="72" rx="10" style="stroke:var(--ink-0);stroke-width:1.6"/>
+        <text x="510" y="252" class="label" text-anchor="middle">run.py — orchestrator</text>
+        <text x="510" y="270" class="sub" text-anchor="middle">owns every policy constant (config.toml) · runs once per invocation</text>
+        <text x="510" y="286" class="sub" text-anchor="middle">extend → reconcile → register → refresh → persist → export</text>
+      </g>
+
+      <!-- side computation modules -->
+      <g class="dgm-box compute">
+        <rect x="20" y="330" width="230" height="58" rx="10"/>
+        <text x="36" y="354" class="label">cycle_extractor.py</text>
+        <text x="36" y="372" class="sub">.traj history → ControlAction</text>
+      </g>
+      <g class="dgm-box compute">
+        <rect x="270" y="330" width="230" height="58" rx="10"/>
+        <text x="286" y="354" class="label">simulate.py</text>
+        <text x="286" y="372" class="sub">forward-integrate one trajectory</text>
+      </g>
+      <g class="dgm-box">
+        <rect x="520" y="330" width="230" height="58" rx="10"/>
+        <text x="536" y="354" class="label">float_store.py</text>
+        <text x="536" y="372" class="sub">load / save FloatRow · ModelTrack (parquet)</text>
+      </g>
+      <g class="dgm-box">
+        <rect x="770" y="330" width="230" height="58" rx="10"/>
+        <text x="786" y="354" class="label">data/store/*.parquet</text>
+        <text x="786" y="372" class="sub">7 tables — see Storage section below</text>
+      </g>
+
+      <!-- run.py <-> compute modules (right-angle routing, anchored on box borders only) -->
+      <path d="M340,296 L340,312 L135,312 L135,330" class="dgm-arrow" marker-end="url(#arrow)"/>
+      <path d="M385,296 L385,330" class="dgm-arrow" marker-end="url(#arrow)"/>
+      <path d="M650,296 L650,312 L635,312 L635,330" class="dgm-arrow" marker-end="url(#arrow)"/>
+      <path d="M730,270 L800,270 L800,312 L885,312 L885,330" class="dgm-arrow" marker-end="url(#arrow)"/>
+      <path d="M750,359 L770,359" class="dgm-arrow" marker-end="url(#arrow)"/>
+      <path d="M770,368 L750,368" class="dgm-arrow" marker-end="url(#arrow)"/>
+
+      <!-- run.py down to web_export -->
+      <path d="M510,296 L510,420" class="dgm-arrow" marker-end="url(#arrow)"/>
+
+      <g class="dgm-box accent">
+        <rect x="330" y="420" width="360" height="56" rx="10"/>
+        <text x="510" y="444" class="label" text-anchor="middle">web_export.py</text>
+        <text x="510" y="462" class="sub" text-anchor="middle">floats_db + error_db + leg_history → JSON</text>
+      </g>
+
+      <path d="M510,476 L510,504" class="dgm-arrow" marker-end="url(#arrow)"/>
+
+      <g class="dgm-box">
+        <rect x="330" y="504" width="360" height="52" rx="10"/>
+        <text x="510" y="526" class="label" text-anchor="middle">docs/data/floats.json · leaderboard.json</text>
+        <text x="510" y="544" class="sub" text-anchor="middle">static files, committed back to the repo</text>
+      </g>
+
+      <path d="M420,556 L420,580" class="dgm-arrow" marker-end="url(#arrow)"/>
+      <path d="M600,556 L600,580" class="dgm-arrow" marker-end="url(#arrow)"/>
+
+      <g class="dgm-box">
+        <rect x="330" y="580" width="160" height="46" rx="10"/>
+        <text x="410" y="600" class="label" text-anchor="middle" style="font-size:11.5px">index.html</text>
+        <text x="410" y="616" class="sub" text-anchor="middle">this leaderboard</text>
+      </g>
+      <g class="dgm-box">
+        <rect x="530" y="580" width="160" height="46" rx="10"/>
+        <text x="610" y="600" class="label" text-anchor="middle" style="font-size:11.5px">map.html</text>
+        <text x="610" y="616" class="sub" text-anchor="middle">per-float trajectories</text>
+      </g>
+
+      <!-- GitHub actions trigger -->
+      <text x="775" y="426" class="dgm-group-label">Trigger</text>
+      <g class="dgm-box">
+        <rect x="770" y="440" width="230" height="70" rx="10" stroke-dasharray="4 3"/>
+        <text x="786" y="463" class="label" style="font-size:12px">GitHub Actions cron</text>
+        <text x="786" y="479" class="sub">04:30 &amp; 16:30 UTC daily</text>
+        <text x="786" y="495" class="sub">runs `uv run main.py`, commits results</text>
+      </g>
+      <path d="M885,440 L885,400 L730,255" class="dgm-arrow" marker-end="url(#arrow)" stroke-dasharray="4 3"/>
+    </svg>
+  </div>
+
+  <!-- ══════════════════════ ONE PIPELINE RUN ══════════════════════ -->
+  <div class="section-label">One Pipeline Run, Step by Step</div>
+  <p class="body">
+    Every invocation of <code>main.py</code> (twice daily, via GitHub Actions, or
+    manually) calls <code>run.run()</code> once. It loads all persisted state,
+    performs four passes over the float registry, then writes everything back out.
+  </p>
+  <div class="panel" style="margin-top:20px;">
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div>
+          <div class="step-title">Refresh cycle actions — <code>_refresh_cycle_actions</code></div>
+          <div class="step-desc">
+            For every live float, re-downloads <code>Rtraj.nc</code> fresh
+            (<code>force_refresh=True</code> — GDAC's file grows in place) and
+            re-derives its <code>ControlAction</code> (dive depth, cycle length, ascent/descent
+            speed) by mode-voting <code>park_mode</code> and taking the <strong>median</strong>
+            of every numeric field across only the float's <code>recent_cycles_for_vote</code>
+            (config: 5) most recent real cycles — not its full history, since floats get
+            reprogrammed to a different cycle length mid-mission. Runs first so this
+            round's own simulation already uses the freshest estimate.
+          </div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div>
+          <div class="step-title">Extend trajectories — <code>_extend_trajectories</code></div>
+          <div class="step-desc">
+            One <code>download_model_data</code> fetch per model (not per float), scoped to a
+            tight bounding box around every active float's anchor and trajectory tip
+            (<code>_active_bounding_box</code>). Each float's row is trimmed to strictly-after
+            its own trajectory tip (<code>trim_to_forecast_only</code>) and advanced with
+            <code>simulate.simulate_cycle</code>. A model with nothing new beyond where a row
+            already is gets <strong>frozen in place</strong> for this round
+            (<code>missed_model_pulls += 1</code>) rather than backfilled. Each real model also
+            runs a parallel <em>shadow</em> track with <code>force_drift=True</code>, so
+            <code>park_on_bottom</code> floats still drift with the parking-depth current for
+            comparison — never shown on the public leaderboard/map.
+          </div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div>
+          <div class="step-title">Reconcile against real Argo data — <code>_reconcile_with_argo</code></div>
+          <div class="step-desc">
+            Pulls the current Argo population (<code>download_argo_floats_in_domain</code>).
+            A float missing from this pull gets <code>missed_pulls += 1</code> (dead at
+            5 consecutive misses). A float with a <strong>new</strong> confirmed surfacing gets
+            scored: each model's trajectory is looked up at the exact real surfacing timestamp
+            (never "last point" — the simulated tip usually runs ahead of real time) and the
+            haversine distance to the real position is appended to <code>error_db</code>, unless
+            the float was overdue (10+ days since its last surfacing) — still reset, just
+            excluded from scoring. Every model's trajectory is then <strong>reset to a single
+            anchor point</strong> at the real surfacing — this is what makes phase (descending /
+            parking / ascending) recoverable later purely from elapsed time, with no phase flag
+            ever stored. The discarded leg's full simulated path is copied into
+            <code>leg_history</code> immediately before the reset.
+          </div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div>
+          <div class="step-title">Register new floats — <code>_register_new_floats</code></div>
+          <div class="step-desc">
+            Any float present in this Argo pull but not yet in <code>floats_db</code> gets a
+            fresh <code>FloatRow</code> built from its full cycle history
+            (<code>_build_new_float_row</code> → <code>cycle_extractor.extract_cycles</code> +
+            <code>build_actions</code> + <code>mode_vote_action</code>), or
+            <code>default_action()</code> (5-day bottom-park fallback) if it has fewer than
+            2 usable historical cycles.
+          </div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">5</div>
+        <div>
+          <div class="step-title">Persist &amp; export</div>
+          <div class="step-desc">
+            All seven state tables are written back to <code>data/store/*.parquet</code>
+            (<code>float_store.save_*</code>), then <code>web_export.export_floats</code> and
+            <code>export_leaderboard</code> flatten the in-memory state into
+            <code>docs/data/floats.json</code> and <code>docs/data/leaderboard.json</code> —
+            the only two files this page's and the map's frontend JavaScript ever fetch.
+            The GitHub Actions workflow commits both the parquet state and the JSON export
+            back to the repo.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════ MODULE MAP ══════════════════════ -->
+  <div class="section-label">Module Responsibilities</div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Module</th><th>Job</th><th>I/O</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="key">data_handler.py</td>
+          <td>Fetches everything external: CMEMS currents, FCOO currents, Argo domain population, one float's full <code>.traj</code>/profile history.</td>
+          <td>Network only — no simulation, no knowledge of <code>FloatRow</code>.</td>
+        </tr>
+        <tr>
+          <td class="key">cycle_extractor.py</td>
+          <td>Pure computation: turns a float's raw <code>.traj</code> history into per-cycle metadata, then a single representative <code>ControlAction</code>.</td>
+          <td>No I/O — takes a local file path, returns dicts/dataclasses.</td>
+        </tr>
+        <tr>
+          <td class="key">simulate.py</td>
+          <td>Pure computation: builds current-field interpolators from fetched model data and forward-integrates one trajectory leg. Defines <code>ControlAction</code> (imported by <code>cycle_extractor</code>).</td>
+          <td>No I/O — deterministic, no randomness.</td>
+        </tr>
+        <tr>
+          <td class="key">float_store.py</td>
+          <td>Load/save the float registry and every history table, flattening dataclasses to/from parquet.</td>
+          <td>Disk only — no fetching, no simulation.</td>
+        </tr>
+        <tr>
+          <td class="key">web_export.py</td>
+          <td>Flattens in-memory state into the two JSON files the static frontend reads.</td>
+          <td>Pure function of its inputs → writes <code>docs/data/*.json</code>.</td>
+        </tr>
+        <tr>
+          <td class="key">run.py</td>
+          <td>Orchestrates the whole cycle above and owns every policy constant (thresholds, region bounds) sourced from <code>config.toml</code>.</td>
+          <td>Calls every module above; the only one that knows about all of them.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ══════════════════════ DATA MODEL ══════════════════════ -->
+  <div class="section-label">Data Model</div>
+  <div class="grid-2">
+    <div class="panel">
+      <div class="panel-title">FloatRow — one per float (WMO id)</div>
+      <div class="field-list">
+        <div class="field-row"><span class="field-name">float_id</span><span class="field-type">str</span></div>
+        <div class="field-row"><span class="field-name">cycle_action</span><span class="field-type">ControlAction</span><span class="field-desc">mode-voted across recent real cycles</span></div>
+        <div class="field-row"><span class="field-name">last_real_position</span><span class="field-type">(lat, lon, time)</span><span class="field-desc">last confirmed real surfacing</span></div>
+        <div class="field-row"><span class="field-name">missed_pulls</span><span class="field-type">int</span><span class="field-desc">consecutive absences from the Argo feed</span></div>
+        <div class="field-row"><span class="field-name">is_dead</span><span class="field-type">bool</span><span class="field-desc">missed_pulls ≥ 5</span></div>
+        <div class="field-row"><span class="field-name">models</span><span class="field-type">{name: ModelTrack}</span></div>
+        <div class="field-row"><span class="field-name">surfacing_history</span><span class="field-type">[(lat, lon, time), …]</span><span class="field-desc">every confirmed real surfacing</span></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">ModelTrack — one simulated leg per model</div>
+      <div class="field-list">
+        <div class="field-row"><span class="field-name">trajectory</span><span class="field-type">[(t, lat, lon, depth), …]</span><span class="field-desc">trajectory[0] is always the anchor</span></div>
+        <div class="field-row"><span class="field-name">missed_model_pulls</span><span class="field-type">int</span><span class="field-desc">consecutive cycles with no new forecast data</span></div>
+      </div>
+      <div class="panel-title" style="margin-top:22px;">ControlAction — one dive profile</div>
+      <div class="field-list">
+        <div class="field-row"><span class="field-name">park_mode</span><span class="field-type">str</span><span class="field-desc">bottom / parking_depth / drift_on_surface</span></div>
+        <div class="field-row"><span class="field-name">cycle_hours</span><span class="field-type">float</span><span class="field-desc">descent + parking time only</span></div>
+        <div class="field-row"><span class="field-name">target_depth</span><span class="field-type">float | None</span><span class="field-desc">dbar</span></div>
+        <div class="field-row"><span class="field-name">descent / ascent_speed_ms</span><span class="field-type">float</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════ STORAGE ══════════════════════ -->
+  <div class="section-label">Storage — data/store/*.parquet</div>
+  <p class="body">
+    Every table is missing-file-tolerant on load (returns empty rather than
+    erroring on first run) and whole-frame-overwritten on save.
+  </p>
+  <div class="table-wrap" style="margin-top:16px;">
+    <table>
+      <thead><tr><th>Table</th><th>Grain</th><th>What it holds</th></tr></thead>
+      <tbody>
+        <tr><td class="key">floats_meta.parquet</td><td>1 row / float</td><td>Scalar <code>FloatRow</code> fields, including each model's <code>cycle_action</code> and missed-pull counters.</td></tr>
+        <tr><td class="key">trajectories.parquet</td><td>1 row / (float, model, t)</td><td>Every point of every model's current simulated leg.</td></tr>
+        <tr><td class="key">surfacings.parquet</td><td>1 row / (float, t)</td><td>Real confirmed surfacing history.</td></tr>
+        <tr><td class="key">errors.parquet</td><td>1 row / scoring event</td><td>Position error + drift distance per (float, model) at each real surfacing — the raw material behind the leaderboard.</td></tr>
+        <tr><td class="key">forecast_history.parquet</td><td>1 row / (float, model, run)</td><td>What each pipeline run predicted for the float's <em>next</em> surfacing — lets predictions be compared as fresher data arrives.</td></tr>
+        <tr><td class="key">cycle_action_history.parquet</td><td>1 row / (float, run)</td><td>Every run's re-derived <code>ControlAction</code>, so the estimate's evolution over time is inspectable.</td></tr>
+        <tr><td class="key">leg_history.parquet</td><td>1 row / (float, model, leg point)</td><td>Full simulated path of every completed leg, captured right before its anchor reset would otherwise discard it — drawn on the map as the predicted-path line.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ══════════════════════ DESIGN RULES ══════════════════════ -->
+  <div class="section-label">Rules That Shape the Numbers You See</div>
+  <div class="panel">
+    <ul class="body-list">
+      <li><strong>No "surfaced" flag anywhere.</strong> A trajectory just keeps advecting indefinitely on the same dive profile, repeating it, until a real Argo ping resets the anchor.</li>
+      <li><strong>Scoring is forced by real data arriving,</strong> never by a model's own simulation deciding it has "surfaced."</li>
+      <li><strong>Freeze-on-gap, not backfill.</strong> If no new model data arrives, that row simply isn't extended this round — there's no retroactive resimulation once better data shows up later.</li>
+      <li><strong>Forecast-only trimming.</strong> Each model pull is trimmed to strictly after the previous issue time before extending a trajectory, so the leaderboard measures forecast skill, not a mix of forecast and analysis-grade accuracy.</li>
+      <li><strong>Overdue floats (10+ days since last surfacing) are excluded from scoring but not killed</strong> — a fresh ping clears the exclusion for free.</li>
+      <li><strong>Shadow tracks</strong> (<code>_shadow</code> suffix) mirror every real model with <code>force_drift=True</code>, to check the <code>park_on_bottom</code> assumption against reality — never surfaced on the public leaderboard or map.</li>
+    </ul>
+  </div>
+
+  <footer>
+    <span>CMEMS Baltic Sea Analysis &amp; Forecast · FCOO GETM · Argo GDAC</span>
+    <a href="index.html">← Back to Leaderboard</a>
+  </footer>
+</div>
+</body>
+</html>

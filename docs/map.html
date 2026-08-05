@@ -92,6 +92,12 @@
     border-radius: 999px;
   }
   .bar-link:hover { background: var(--blue); border-color: var(--blue); color: #fff; }
+  .bar-link.ghost {
+    background: transparent;
+    border-color: var(--line-hi);
+    color: var(--ink-1);
+  }
+  .bar-link.ghost:hover { background: var(--ink-0); border-color: var(--ink-0); color: #fff; }
 
   /* ── Map + panel row ── */
   #body-row { flex: 1; display: flex; min-height: 0; position: relative; }
@@ -311,6 +317,12 @@
     </div>
     <div class="bar-sep"></div>
     <span class="updated-badge" id="updated-badge"></span>
+    <a href="pipeline.html" class="bar-link ghost">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+        <path d="M4 19.5A2.5 2.5 0 016.5 17H20M4 19.5A2.5 2.5 0 006.5 22H20V2H6.5A2.5 2.5 0 004 4.5v15z"/>
+      </svg>
+      How This Works
+    </a>
     <a href="index.html" class="bar-link">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
         <path d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"/>

@@ -1,5 +1,19 @@
 # CMEMS / FCOO Argo Leaderboard
 
+## Maintenance note
+
+`docs/pipeline.html` is a human-readable "how this works" page published on
+the site itself (linked from `index.html` and `map.html`), covering the data
+flow, the four-step `run.py` cycle, module responsibilities, the data model,
+and the parquet storage schema. **It is a duplicate explanation of this file
+and of the modules it describes, kept only because it's public-facing** --
+whenever you change what a function in `run.py`, `data_handler.py`,
+`simulate.py`, `cycle_extractor.py`, `float_store.py`, or `web_export.py`
+actually does (new step, changed table schema, renamed field, new policy
+constant), update the matching section of `docs/pipeline.html` in the same
+change. Don't let it silently drift the way this file's own "What's
+implemented vs. stubbed" section did.
+
 ## What this is
 
 An operational leaderboard that scores ocean current forecast models
