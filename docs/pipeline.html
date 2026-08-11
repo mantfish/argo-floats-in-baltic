@@ -251,7 +251,7 @@
       </g>
       <g class="dgm-box">
         <rect x="260" y="38" width="220" height="60" rx="10"/>
-        <text x="276" y="64" class="label">FCOO GETM (dk / idk)</text>
+        <text x="276" y="64" class="label">FCOO GETM (dk / idk / surf)</text>
         <text x="276" y="82" class="sub">OPeNDAP via pydap — u, v currents</text>
       </g>
       <g class="dgm-box">
@@ -379,11 +379,15 @@
             For every live float, re-downloads <code>Rtraj.nc</code> fresh
             (<code>force_refresh=True</code> — GDAC's file grows in place) and
             re-derives its <code>ControlAction</code> (dive depth, cycle length, ascent/descent
-            speed) by mode-voting <code>park_mode</code> and taking the <strong>median</strong>
-            of every numeric field across only the float's <code>recent_cycles_for_vote</code>
+            speed) across only the float's <code>recent_cycles_for_vote</code>
             (config: 5) most recent real cycles — not its full history, since floats get
-            reprogrammed to a different cycle length mid-mission. Runs first so this
-            round's own simulation already uses the freshest estimate.
+            reprogrammed to a different cycle length mid-mission. Every numeric field takes the
+            <strong>median</strong> across that window; <code>park_mode</code> is
+            <code>park_on_bottom</code> only if <strong>every one</strong> of those recent
+            cycles has Argo's own <code>GROUNDED</code> QC flag set (the float's own onboard
+            determination of whether it touched the seabed that cycle) — a single non-grounded
+            cycle in the window is treated as genuine uncertainty, not outvoted by a majority.
+            Runs first so this round's own simulation already uses the freshest estimate.
           </div>
         </div>
       </div>
@@ -396,7 +400,17 @@
             tight bounding box around every active float's anchor and trajectory tip
             (<code>_active_bounding_box</code>). Each float's row is trimmed to strictly-after
             its own trajectory tip (<code>trim_to_forecast_only</code>) and advanced with
-            <code>simulate.simulate_cycle</code>. A model with nothing new beyond where a row
+            <code>simulate.simulate_cycle</code>, which integrates with classic 4th-order
+            Runge-Kutta rather than forward Euler, at an <strong>adaptive step size</strong>:
+            fine (60 s) while descending, ascending, or communicating at the surface, and much
+            coarser (up to 3600 s, clamped to never overshoot the next phase boundary) while at
+            constant parking depth. Every current-field query is corrected against two failure
+            modes that used to silently return exactly <code>0.0</code>: a query shallower than
+            a grid's shallowest real level now holds at that level instead of falling out of
+            range (<code>_clamp_shallow</code>), and a query landing on a masked/land grid cell
+            is filled from its nearest real neighbor instead of zeroed
+            (<code>_fill_masked_nearest</code>) — the latter was, on real data, the dominant
+            cause of legs that silently never moved. A model with nothing new beyond where a row
             already is gets <strong>frozen in place</strong> for this round
             (<code>missed_model_pulls += 1</code>) rather than backfilled. Each real model also
             runs a parallel <em>shadow</em> track with <code>force_drift=True</code>, so
@@ -467,17 +481,17 @@
       <tbody>
         <tr>
           <td class="key">data_handler.py</td>
-          <td>Fetches everything external: CMEMS currents, FCOO currents, Argo domain population, one float's full <code>.traj</code>/profile history.</td>
+          <td>Fetches everything external: CMEMS currents, FCOO currents (depth-resolved <code>dk</code>/<code>idk</code> grids plus a dedicated near-surface product, fetched independently), Argo domain population, one float's full <code>.traj</code>/profile history.</td>
           <td>Network only — no simulation, no knowledge of <code>FloatRow</code>.</td>
         </tr>
         <tr>
           <td class="key">cycle_extractor.py</td>
-          <td>Pure computation: turns a float's raw <code>.traj</code> history into per-cycle metadata, then a single representative <code>ControlAction</code>.</td>
+          <td>Pure computation: turns a float's raw <code>.traj</code> history into per-cycle metadata, then a single representative <code>ControlAction</code>. <code>park_on_bottom</code> comes straight from Argo's own per-cycle <code>GROUNDED</code> QC flag — no bathymetry-based inference.</td>
           <td>No I/O — takes a local file path, returns dicts/dataclasses.</td>
         </tr>
         <tr>
           <td class="key">simulate.py</td>
-          <td>Pure computation: builds current-field interpolators from fetched model data and forward-integrates one trajectory leg. Defines <code>ControlAction</code> (imported by <code>cycle_extractor</code>).</td>
+          <td>Pure computation: builds current-field interpolators from fetched model data (three resolution tiers for FCOO — surface grid, then <code>idk</code>, then <code>dk</code>) and forward-integrates one trajectory leg with adaptive-step RK4. Defines <code>ControlAction</code> (imported by <code>cycle_extractor</code>).</td>
           <td>No I/O — deterministic, no randomness.</td>
         </tr>
         <tr>
@@ -561,6 +575,8 @@
       <li><strong>Forecast-only trimming.</strong> Each model pull is trimmed to strictly after the previous issue time before extending a trajectory, so the leaderboard measures forecast skill, not a mix of forecast and analysis-grade accuracy.</li>
       <li><strong>Overdue floats (10+ days since last surfacing) are excluded from scoring but not killed</strong> — a fresh ping clears the exclusion for free.</li>
       <li><strong>Shadow tracks</strong> (<code>_shadow</code> suffix) mirror every real model with <code>force_drift=True</code>, to check the <code>park_on_bottom</code> assumption against reality — never surfaced on the public leaderboard or map.</li>
+      <li><strong>A current-field query never silently reads as exactly zero anymore.</strong> A query shallower than a grid's shallowest real level holds at that level; a query landing on a masked/land grid cell is filled from its nearest real neighbor. Since <code>park_on_bottom</code> floats only advect during their brief non-parked window each cycle, either failure mode used to be able to freeze an entire multi-day leg at the anchor position — confirmed as the dominant cause of legs that appeared not to move at all.</li>
+      <li><strong><code>park_on_bottom</code> requires every one of a float's recent cycles to be Argo-grounded,</strong> not a majority. Getting this wrong is a qualitative fork, not a matter of degree — <code>park_on_bottom</code> skips advection entirely during parking, <code>parking_depth</code> doesn't — so a mixed recent history is left as genuine uncertainty (see shadow tracks above) rather than resolved by outvoting it.</li>
     </ul>
   </div>
 
