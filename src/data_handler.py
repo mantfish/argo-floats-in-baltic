@@ -4,26 +4,32 @@ data_handler.py
 All external data acquisition for the CMEMS/FCOO leaderboard.
 
 FCOO ("fcoo" model) is accessed via OPeNDAP through xarray's "pydap" engine
-(not the default netCDF4 engine -- see _open_fcoo_dataset), against the
-shared dk_nested.velocities.Z3D_<YYYYMMDDHH>.nc GETM product -- one file per
-forecast run containing BOTH FCOO grids as separate variable groups, merged
-here into a single model rather than two:
-    dk  -- 1 nm North Sea + Baltic, full domain, 10 real depth levels (5-200 m)
-    idk -- 600 m inner-Danish waters (a spatial nest, not a subgrid of dk),
-           6 real depth levels (5-50 m)
-
-The file is discovered (latest by run timestamp) and opened once per
-pipeline run, shared between both grids' fetches.
+(not the default netCDF4 engine -- see _open_fcoo_dataset), against two
+separate GETM products, both discovered/fetched fresh each pipeline run:
+    dk_nested.velocities.Z3D_<YYYYMMDDHH>.nc  -- one file containing BOTH
+        depth-resolved grids as separate variable groups:
+        dk  -- 1 nm North Sea + Baltic, full domain, 10 real depth levels (5-200 m)
+        idk -- 600 m inner-Danish waters (a spatial nest, not a subgrid of dk),
+               6 real depth levels (5-50 m)
+    nsbalt-1nm_velocities_surface_<YYYYMMDDHH>.nc -- FCOO's own dedicated
+        near-surface product (North Sea + Baltic, 1 nm, no depth axis --
+        already level-averaged to a single representative surface value).
+        Used to cover the 0-5m gap below dk/idk's shallowest real level
+        properly (see simulate._build_fcoo_interpolators) instead of
+        holding the current constant at dk/idk's shallowest-level value
+        for that whole gap.
 
 CMEMS returns the pipeline's plain single-grid schema:
     dims : time, depth, lat, lon
     vars : u, v  (m/s, eastward / northward)
-FCOO returns both grids merged, sharing one time coord but keeping separate
-depth/lat/lon dims per grid (dk and idk are different meshes, not one
-rectilinear grid -- they can't be merged into a single RegularGridInterpolator
-input). See simulate.build_interpolators for how a single (u, v) query is
-resolved from the two grids (idk preferred where its bounds cover the query
-point, dk as fallback).
+FCOO returns all three grids merged into one dataset, each keeping its own
+time/lat/lon (and depth, for dk/idk) dims -- dk, idk, and the surface
+product are three different meshes on three independent per-run forecast
+files, not one rectilinear grid, so they can't be merged into a single
+RegularGridInterpolator input. See simulate.build_interpolators for how a
+single (u, v) query is resolved across the three (surface preferred below
+5m, then idk where its bounds cover the query point, dk as the final
+fallback).
 
 depth is each grid's real vertical levels -- no fabricated axis. Floats
 queried below a grid's deepest level or above its shallowest get
@@ -85,6 +91,10 @@ _FCOO_GRID_IDK = "idk"
 
 # Filename prefix used to discover the latest shared Z3D file via _latest_getm_file
 _FCOO_Z3D_PREFIX = "dk_nested.velocities.Z3D_"
+
+# Filename prefix for FCOO's dedicated near-surface product -- a separate
+# per-run file from the Z3D one above, discovered/fetched independently.
+_FCOO_SURFACE_PREFIX = "nsbalt-1nm_velocities_surface_"
 
 # Browser User-Agent so institutional servers don't block the requests
 _BROWSER_UA = (
@@ -240,13 +250,18 @@ def _fetch_cmems(
 # -- FCOO (OPeNDAP) ----------------------------------------------------------
 
 _fcoo_z3d_url: Optional[str] = None
+_fcoo_surface_url: Optional[str] = None
 _fcoo_ds_cache: dict[str, xr.Dataset] = {}
 
 # Timesteps per OPeNDAP request, per grid. 'idk' is a larger array per
 # timestep than 'dk' (478x450x6 vs 362x290x10 points) and was observed live
 # to hit the silent-corruption failure mode far more often at the same chunk
 # size -- smaller chunks make each individual request less likely to trigger it.
-_FCOO_TIME_CHUNK = {"dk": 8, "idk": 3}
+# 'surface' has no depth axis (one level, already averaged), so its per-
+# timestep payload is smaller than even 'dk' at the same lat/lon extent --
+# chunk size matches 'dk' as a conservative starting point (not yet tuned
+# against live corruption behavior the way dk/idk's sizes were).
+_FCOO_TIME_CHUNK = {"dk": 8, "idk": 3, "surface": 8}
 
 # The corruption itself is a genuine, confirmed-intermittent upstream
 # pydap/OPeNDAP server issue (reproduced live: identical requests fail then
@@ -317,6 +332,21 @@ def _get_fcoo_z3d_url() -> str:
         _fcoo_z3d_url = FCOO_BASE + fname
         logger.info("FCOO Z3D: %s", fname)
     return _fcoo_z3d_url
+
+
+def _get_fcoo_surface_url() -> str:
+    """Discover (once) the latest dedicated near-surface product URL --
+    a separate per-run file from the Z3D one, not guaranteed to share its
+    exact issue timestamp (see _build_fcoo_surface_dataset)."""
+    global _fcoo_surface_url
+    if _fcoo_surface_url is None:
+        files = _list_getm_files()
+        fname = _latest_getm_file(files, _FCOO_SURFACE_PREFIX)
+        if fname is None:
+            raise RuntimeError(f"No {_FCOO_SURFACE_PREFIX} surface velocity file found at {FCOO_BASE}")
+        _fcoo_surface_url = FCOO_BASE + fname
+        logger.info("FCOO surface: %s", fname)
+    return _fcoo_surface_url
 
 
 _FCOO_MAX_PLAUSIBLE_KNOTS = 50.0   # far above any real current; anything past this is corruption
@@ -393,24 +423,31 @@ def _load_fcoo_var_chunked(url: str, var_name: str, sel: dict, n_time: int, chun
 
 def _fetch_fcoo(region: Region) -> xr.Dataset:
     """
-    Fetch both FCOO grids from the shared dk_nested Z3D file and merge them
-    into one dataset for the unified 'fcoo' model. Both grids share one
-    "time" coord (so trim_to_forecast_only/_is_empty/_last_timestamp in
-    run.py keep working unchanged) but keep their own depth/lat/lon dims,
-    since 'idk' (finer, inner-Danish-waters only) is not a subgrid of 'dk'
-    (coarser, full domain) -- simulate.build_interpolators resolves the two
-    into a single current field at query time (idk preferred, dk fallback).
+    Fetch all three FCOO grids -- dk and idk from the shared dk_nested Z3D
+    file, plus the dedicated near-surface product from its own separate
+    file -- and merge them into one dataset for the unified 'fcoo' model.
+    dk/idk share one "time" coord (same source file; so
+    trim_to_forecast_only/_is_empty/_last_timestamp in run.py keep working
+    unchanged against it) but keep their own depth/lat/lon dims, since
+    'idk' (finer, inner-Danish-waters only) is not a subgrid of 'dk'
+    (coarser, full domain) -- simulate.build_interpolators resolves all
+    three into a single current field at query time (surface preferred
+    below dk/idk's shallowest real level, then idk where its bounds cover
+    the query point, dk as the final fallback). The surface product keeps
+    its own "time_surf" coord rather than sharing "time" -- it's a
+    genuinely separate per-run file from dk/idk's, not guaranteed to carry
+    the exact same issue timestamp or forecast-step alignment.
 
-    dk and idk are fetched independently and a failure in one does NOT
-    discard the other -- 'idk' is a small array per timestep but was
+    All three grids are fetched independently and a failure in any one does
+    NOT discard the others -- 'idk' is a small array per timestep but was
     observed live to hit the intermittent OPeNDAP corruption/connection-drop
     failure mode (_load_fcoo_var_chunked) more often than 'dk', and floats
     outside idk's small inner-Danish-waters footprint never need it anyway
-    (see simulate._build_fcoo_interpolators's idk-preferred/dk-fallback
-    resolution). Previously an idk failure raised out of this whole
-    function, throwing away an already-successful dk fetch and freezing
-    every FCOO track for the round -- including floats that only ever
-    resolved through dk. Only raises if *both* grids fail.
+    (see simulate._build_fcoo_interpolators's resolution order). A missing
+    surface grid falls back to simulate._clamp_shallow's old behavior
+    (hold at dk/idk's shallowest real level) for that round. Only raises if
+    *both* dk and idk fail -- the surface grid alone can't carry a track
+    (see simulate.build_interpolators's fallback-to-clamp when absent).
     """
     if "fcoo" not in _fcoo_ds_cache:
         url = _get_fcoo_z3d_url()
@@ -433,6 +470,16 @@ def _fetch_fcoo(region: Region) -> xr.Dataset:
                 f"FCOO: both dk and idk grid fetches failed (dk: {dk_err!r}, idk: {idk_err!r})"
             )
 
+        surf = None
+        try:
+            surf_url = _get_fcoo_surface_url()
+            surf = _build_fcoo_surface_dataset(surf_url, region)
+        except Exception:
+            logger.warning(
+                "FCOO surface grid fetch failed -- falling back to dk/idk's "
+                "shallowest real level near the surface this round", exc_info=True,
+            )
+
         data_vars: dict = {}
         coords: dict = {"time": (dk if dk is not None else idk)["time"].values}
         if dk is not None:
@@ -447,6 +494,12 @@ def _fetch_fcoo(region: Region) -> xr.Dataset:
             coords["depth_idk"] = idk["depth"].values
             coords["lat_idk"] = idk["lat"].values
             coords["lon_idk"] = idk["lon"].values
+        if surf is not None:
+            data_vars["u_surf"] = (["time_surf", "lat_surf", "lon_surf"], surf["u"].values)
+            data_vars["v_surf"] = (["time_surf", "lat_surf", "lon_surf"], surf["v"].values)
+            coords["time_surf"] = surf["time"].values
+            coords["lat_surf"] = surf["lat"].values
+            coords["lon_surf"] = surf["lon"].values
 
         _fcoo_ds_cache["fcoo"] = xr.Dataset(data_vars, coords=coords)
     return _fcoo_ds_cache["fcoo"]
@@ -515,6 +568,70 @@ def _build_fcoo_dataset(url: str, suffix: str, region: Region) -> xr.Dataset:
             "depth": ds[zax_name].values.astype(np.float64),
             "lat":   latc[lat0:lat1 + 1].astype(np.float64),
             "lon":   lonc[lon0:lon1 + 1].astype(np.float64),
+        },
+    )
+
+
+def _build_fcoo_surface_dataset(url: str, region: Region) -> xr.Dataset:
+    """
+    Subset FCOO's dedicated near-surface product (nsbalt-1nm_velocities_
+    surface_<ts>.nc) to `region` and normalize to a depth-less schema:
+        dims : time, lat, lon
+        vars : u, v  (m/s eastward / northward)
+
+    Unlike dk/idk (real depth-resolved 3D levels from the shared Z3D file),
+    this file has no depth axis at all -- its uu/vv are already FCOO's own
+    level-averaged representative surface value (cell_methods "level: mean",
+    standard_name surface_eastward/northward_sea_water_velocity). Confirmed
+    live: 56 hourly steps (same forecast horizon as the Z3D product), full
+    North Sea + Baltic domain (lat ~50.9-66.0, lon ~-4.1-30.3) -- comfortably
+    covers config.toml's REGION, so region-restriction below is the same
+    "shrink to what's needed" step as _build_fcoo_dataset, not a coverage
+    requirement.
+    """
+    lat_name, lon_name = "latc", "lonc"
+    u_name, v_name = "uu", "vv"
+
+    ds = _open_fcoo_dataset(url)   # cheap: metadata + small 1-D coords only, here
+    latc = ds[lat_name].values
+    lonc = ds[lon_name].values
+    times = ds["time"].values
+    n_time = ds.sizes["time"]
+
+    lat_idx = np.where((latc >= region.lat_min) & (latc <= region.lat_max))[0]
+    lon_idx = np.where((lonc >= region.lon_min) & (lonc <= region.lon_max))[0]
+    if not lat_idx.size or not lon_idx.size:
+        logger.info(
+            "FCOO surface: no points in this round's fetch region -- "
+            "using the grid's full native extent instead",
+        )
+        lat_idx = np.arange(latc.size)
+        lon_idx = np.arange(lonc.size)
+    lat0, lat1 = int(lat_idx[0]), int(lat_idx[-1])
+    lon0, lon1 = int(lon_idx[0]), int(lon_idx[-1])
+
+    sel = {lat_name: slice(lat0, lat1 + 1), lon_name: slice(lon0, lon1 + 1)}
+    logger.info(
+        "FCOO surface subset: %d lat x %d lon, %d timesteps",
+        lat1 - lat0 + 1, lon1 - lon0 + 1, n_time,
+    )
+
+    chunk_size = _FCOO_TIME_CHUNK["surface"]
+    uu = _load_fcoo_var_chunked(url, u_name, sel, n_time, chunk_size)
+    vv = _load_fcoo_var_chunked(url, v_name, sel, n_time, chunk_size)
+
+    # Defensive re-mask even though xr.open_dataset already CF-decodes
+    # _FillValue -> NaN (belt-and-suspenders in case decoding is ever bypassed).
+    u = np.where(uu == FCOO_FILL, np.nan, uu).astype(np.float32) * FCOO_KNOTS_TO_MS
+    v = np.where(vv == FCOO_FILL, np.nan, vv).astype(np.float32) * FCOO_KNOTS_TO_MS
+
+    return xr.Dataset(
+        {"u": (["time", "lat", "lon"], u),
+         "v": (["time", "lat", "lon"], v)},
+        coords={
+            "time": times,
+            "lat":  latc[lat0:lat1 + 1].astype(np.float64),
+            "lon":  lonc[lon0:lon1 + 1].astype(np.float64),
         },
     )
 

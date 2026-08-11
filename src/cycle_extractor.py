@@ -39,7 +39,7 @@ from __future__ import annotations
 import math
 from collections import Counter
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Optional
 
 import numpy as np
 import xarray as xr
@@ -49,9 +49,6 @@ from .simulate import ControlAction
 DESC_CODE = 190
 PARKING_CODE = 290
 ASC_CODE = 590
-
-DRIFT_THRESH_KM = -1.0      # disabled: drift-based parked_on_bottom classification not used (depth-based only)
-DEPTH_FRAC_THRESH = 0.85    # avg_parking_depth / bathy >= this -> parked_on_bottom
 
 # Fallback for a brand-new float with no usable cycle history.
 DEFAULT_CYCLE_HOURS = 120.0   # 5 days, descent+parking only (see ControlAction docstring)
@@ -108,6 +105,37 @@ def _build_profile_pos(profiles_path: Path) -> dict[int, tuple[float, float]]:
     return pos
 
 
+def _build_grounded_flags(ds: xr.Dataset) -> dict[int, bool]:
+    """
+    cycle -> True/False from Argo's own GROUNDED variable (Rtraj.nc,
+    reference table 20: 'Y'/'N'/'U' -- "did the profiler touch the ground
+    for that cycle?"), indexed by CYCLE_NUMBER_INDEX rather than
+    N_MEASUREMENT (GROUNDED is one value per cycle, not per measurement).
+
+    This is the float's own onboard/DAC-derived determination, straight
+    from its pressure-vs-time record -- the sole signal extract_cycles uses
+    for parked_on_bottom (no bathymetry-ratio heuristic anymore; see below).
+    'U' (undefined) cycles are omitted here, and the caller treats an
+    omitted cycle as not grounded -- likewise if the variable or its index
+    isn't present at all (older Rtraj format / some DACs).
+    """
+    if "GROUNDED" not in ds.variables or "CYCLE_NUMBER_INDEX" not in ds.variables:
+        return {}
+    cyc_idx = ds["CYCLE_NUMBER_INDEX"].values
+    grounded_raw = ds["GROUNDED"].values
+    flags: dict[int, bool] = {}
+    for c, g in zip(cyc_idx, grounded_raw):
+        if np.isnan(c):
+            continue
+        g = g.decode().strip() if isinstance(g, bytes) else str(g).strip()
+        if g == "Y":
+            flags[int(c)] = True
+        elif g == "N":
+            flags[int(c)] = False
+        # 'U' or anything else: left unset -> extract_cycles treats as not grounded
+    return flags
+
+
 def _robust_start_pos(cycle_ds) -> tuple[Optional[float], Optional[float]]:
     """Fallback position using code-703 GPS fixes when no profiles file has an entry."""
     mask_703 = cycle_ds.MEASUREMENT_CODE.values == 703
@@ -136,7 +164,7 @@ def _robust_start_pos(cycle_ds) -> tuple[Optional[float], Optional[float]]:
         return float(np.median(lats[1:])), float(np.median(lons[1:]))
 
 
-def extract_cycles(rtraj_path: Path, bathy_interp: Callable) -> list[dict]:
+def extract_cycles(rtraj_path: Path) -> list[dict]:
     """Derive per-cycle metadata from an Argo Rtraj NetCDF file. Logic
     unchanged from your original except the profiles-suffix fix above."""
     rtraj_path = Path(rtraj_path)
@@ -153,6 +181,8 @@ def extract_cycles(rtraj_path: Path, bathy_interp: Callable) -> list[dict]:
 
     all_cycles = [int(c) for c in np.unique(ds.CYCLE_NUMBER.values) if not np.isnan(float(c))]
     cycle_numbers = sorted(all_cycles)
+
+    grounded_flags = _build_grounded_flags(ds)
 
     meta: dict[int, dict] = {}
     for cyc in cycle_numbers:
@@ -189,15 +219,17 @@ def extract_cycles(rtraj_path: Path, bathy_interp: Callable) -> list[dict]:
         pres = park_ds.PRES.values.astype(float)
         pres = pres[~np.isnan(pres)]
 
-        bathy_depth_m = float(bathy_interp(start_lat, start_lon))
+        avg_bottom_depth_dbar = float(np.mean(pres)) if len(pres) > 0 else None
 
-        depth_based_parked = False
-        avg_bottom_depth_dbar = None
-
-        if len(pres) > 0:
-            avg_bottom_depth_dbar = float(np.mean(pres))
-            if not math.isnan(bathy_depth_m) and bathy_depth_m > 0:
-                depth_based_parked = bool(avg_bottom_depth_dbar / bathy_depth_m >= DEPTH_FRAC_THRESH)
+        # GROUNDED is Argo's own per-cycle "did it touch bottom" QC flag --
+        # the sole signal for parked_on_bottom now (the bathymetry-ratio
+        # heuristic this used to fall back to has been removed: it was an
+        # inferred guess, GROUNDED is the float's own onboard/DAC-derived
+        # determination). A cycle missing from grounded_flags ('U'/
+        # undefined, or the variable absent from this Rtraj.nc entirely)
+        # is treated as not grounded, not as "fall back to a guess".
+        grounded = grounded_flags.get(cyc)
+        parked_on_bottom = bool(grounded)
 
         meta[cyc] = dict(
             cycle=cyc,
@@ -212,11 +244,14 @@ def extract_cycles(rtraj_path: Path, bathy_interp: Callable) -> list[dict]:
             descent_speed_dbar_s=_speed_from_pres_juld(desc_ds) if len(desc_ds.N_MEASUREMENT) >= 2 else None,
             ascent_speed_dbar_s=_speed_from_pres_juld(asc_ds) if len(asc_ds.N_MEASUREMENT) >= 2 else None,
             avg_bottom_depth_dbar=avg_bottom_depth_dbar,
-            bathy_depth_m=bathy_depth_m,
-            depth_based_parked=depth_based_parked,
-            parked_on_bottom=False,
+            grounded=grounded,
+            parked_on_bottom=parked_on_bottom,
         )
 
+    # Second pass only fills in pairwise (cycle -> next cycle) fields --
+    # surface_duration_min and drift_km -- neither of which parked_on_bottom
+    # depends on anymore (GROUNDED / depth_based_parked are both single-cycle
+    # facts, already resolved above for every cycle including the last one).
     for i, cyc in enumerate(cycle_numbers[:-1]):
         nxt = cycle_numbers[i + 1]
         if cyc not in meta or nxt not in meta:
@@ -228,13 +263,11 @@ def extract_cycles(rtraj_path: Path, bathy_interp: Callable) -> list[dict]:
         drift_km = math.sqrt(dlat_m ** 2 + dlon_m ** 2) / 1000.0
         m["surface_duration_min"] = round(max(surf_min, 0.0), 1)
         m["drift_km"] = round(drift_km, 3)
-        m["parked_on_bottom"] = (drift_km <= DRIFT_THRESH_KM) or m.get("depth_based_parked", False)
 
     if cycle_numbers and cycle_numbers[-1] in meta:
         last = meta[cycle_numbers[-1]]
         last.setdefault("surface_duration_min", 30.0)
         last.setdefault("drift_km", None)
-        last.setdefault("parked_on_bottom", False)
 
     desc_speeds = [v["descent_speed_dbar_s"] for v in meta.values() if v["descent_speed_dbar_s"] is not None]
     asc_speeds = [v["ascent_speed_dbar_s"] for v in meta.values() if v["ascent_speed_dbar_s"] is not None]
@@ -299,9 +332,22 @@ def mode_vote_action(actions: list[ControlAction]) -> ControlAction:
     """
     Collapse a float's per-cycle history into one representative ControlAction.
 
-    park_mode: mode (most common value) across history -- the agreed
-    resolution for mixed histories, rather than treating mixed history as
-    "no usable history."
+    park_mode: unanimous, not majority, for park_on_bottom -- every action
+    in `actions` (i.e. every recent cycle's own GROUNDED flag, see
+    cycle_extractor.extract_cycles) must say park_on_bottom for the float
+    to be classified that way. A single non-grounded cycle in the recent
+    window is enough to NOT commit to it, even if the rest were grounded.
+    Deliberately stricter than a plain majority vote: park_on_bottom vs.
+    parking_depth is a qualitative fork in simulate_cycle (park_on_bottom
+    skips advection entirely during parking; parking_depth still advects
+    at target depth throughout), not a matter of degree, so a mixed recent
+    history is treated as genuine uncertainty rather than resolved by
+    outvoting it. When not unanimous, park_mode instead falls to the
+    ordinary majority vote among the remaining (non-park_on_bottom) modes.
+    This uncertainty is exactly what run.py's shadow tracks (SHADOW_MODELS,
+    force_drift=True) exist to probe -- they run unconditionally for every
+    float regardless of which way this vote lands, so tightening this rule
+    doesn't reduce that coverage.
     All numeric fields: median, not mean, across history. Mean was tried
     first and is fragile to a single anomalous cycle: e.g. every float's
     Rtraj.nc carries a CYCLE_NUMBER=-1 pre-deployment entry that floors to
@@ -319,7 +365,11 @@ def mode_vote_action(actions: list[ControlAction]) -> ControlAction:
     if not actions:
         raise ValueError("mode_vote_action requires at least one ControlAction")
 
-    park_mode = Counter(a.park_mode for a in actions).most_common(1)[0][0]
+    if all(a.park_mode == "park_on_bottom" for a in actions):
+        park_mode = "park_on_bottom"
+    else:
+        non_grounded = [a.park_mode for a in actions if a.park_mode != "park_on_bottom"]
+        park_mode = Counter(non_grounded).most_common(1)[0][0]
     target_depths = [a.target_depth for a in actions if a.target_depth is not None]
 
     return ControlAction(

@@ -499,7 +499,7 @@ def _derive_cycle_action(float_id: str) -> tuple[ControlAction, list[dict]]:
     rtraj_path = data_handler.download_float_history(
         float_id, cache_dir=ARGO_CACHE_DIR, force_refresh=True,
     )
-    cycles = cycle_extractor.extract_cycles(rtraj_path, bathy_interp=_bathy_interp)
+    cycles = cycle_extractor.extract_cycles(rtraj_path)
     if len(cycles) >= 2:
         actions = cycle_extractor.build_actions(cycles)[-RECENT_CYCLES_FOR_VOTE:]
         action = cycle_extractor.mode_vote_action(actions)
@@ -638,7 +638,7 @@ def _backfill_surfacing_history(floats_db: dict[str, FloatRow]) -> None:
         if not rtraj_path.exists():
             continue
         try:
-            cycles = cycle_extractor.extract_cycles(rtraj_path, bathy_interp=_bathy_interp)
+            cycles = cycle_extractor.extract_cycles(rtraj_path)
             row.surfacing_history = [
                 (float(c["last_lat"]), float(c["last_lon"]), datetime.fromisoformat(c["end_time"]))
                 for c in cycles

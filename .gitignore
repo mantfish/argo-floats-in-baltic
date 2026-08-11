@@ -4,3 +4,4 @@ __pycache__/
 *.pyc
 .venv/
 notebooks/*.ascii*
+notebooks/compare_data/
