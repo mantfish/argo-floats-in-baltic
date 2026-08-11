@@ -250,15 +250,32 @@ def _warn_on_zero_fill(
             rows = np.asarray(rows, dtype=np.float64)
             out = np.asarray(interp_raw(rows), dtype=np.float64)
 
-            time_oob = (rows[:, 0] < t_min) | (rows[:, 0] > t_max)
+            before_start = rows[:, 0] < t_min
+            past_end = rows[:, 0] > t_max
+            time_oob = before_start | past_end
             if np.any(time_oob) and not warned_time:
-                over_h = (float(rows[time_oob, 0].max()) - t_max) / 3600.0
-                logger.warning(
-                    "%s: query time outside fetched forecast window "
-                    "(%.1fh past the last available timestep) -- "
-                    "fill_value=0.0 used from there on",
-                    label, over_h,
-                )
+                # Two genuinely different situations were previously conflated
+                # into one "Xh past the last available timestep" message,
+                # always measured against t_max -- for a before_start query
+                # that always produced a confusing negative number instead of
+                # correctly describing a query before the window's start.
+                if np.any(past_end):
+                    gap_h = (float(rows[past_end, 0].max()) - t_max) / 3600.0
+                    logger.warning(
+                        "%s: query time %.1fh past the fetched forecast "
+                        "window's last available timestep -- fill_value=0.0 "
+                        "used from there on",
+                        label, gap_h,
+                    )
+                else:
+                    gap_h = (t_min - float(rows[before_start, 0].min())) / 3600.0
+                    logger.warning(
+                        "%s: query time %.1fh before the fetched forecast "
+                        "window's first available timestep -- fill_value=0.0 "
+                        "used until the window is reached (expected when "
+                        "catching a trajectory up from an old anchor)",
+                        label, gap_h,
+                    )
                 warned_time = True
 
             oob = (time_oob |
