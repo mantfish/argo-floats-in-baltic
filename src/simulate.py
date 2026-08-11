@@ -707,7 +707,7 @@ def simulate_cycle(
     tip_time: datetime,
     until_time: datetime,
     dt_fine: float = 60.0,
-    dt_parked: float = 3600.0,
+    dt_parked: float = 600.0,
     bathy_interp: Optional[Callable[[float, float], float]] = None,
     float_id: str = "",
     force_drift: bool = False,
