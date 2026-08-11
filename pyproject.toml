@@ -16,6 +16,7 @@ dependencies = [
     "pydap>=3.5",
     "ipykernel>=7.3.0",
     "matplotlib>=3.11.0",
+    "pandas-stubs~=3.0.3",
 ]
 
 [build-system]
