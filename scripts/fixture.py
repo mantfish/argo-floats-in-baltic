@@ -32,13 +32,48 @@ NOW = datetime.utcnow().replace(microsecond=0)
 # Helpers
 # --------------------------------------------------------------------------- #
 
+def _depth_profile(hours_since_anchor: float, cycle_hours: float, target_depth: float | None,
+                    park_mode: str, jitter: float = 0.0) -> float:
+    """
+    Rough repeating descent/park/ascent/surface depth wave for fixture
+    purposes only -- not simulate.py's real phase machine, just plausible-
+    looking test data so the map panel's depth-vs-time chart has something
+    to draw. drift_on_surface floats stay near 0 with small noise throughout.
+    """
+    if park_mode == "drift_on_surface" or target_depth is None:
+        return max(0.0, rng.gauss(0.0, 1.5) if jitter else 0.5)
+
+    descent_h = 3.0
+    ascent_h = 3.0
+    surface_h = 0.5
+    period = cycle_hours + descent_h + ascent_h + surface_h
+    phase = hours_since_anchor % period
+
+    if phase < descent_h:
+        depth = target_depth * (phase / descent_h)
+    elif phase < descent_h + cycle_hours:
+        depth = target_depth
+    elif phase < descent_h + cycle_hours + ascent_h:
+        t_asc = phase - descent_h - cycle_hours
+        depth = target_depth * (1 - t_asc / ascent_h)
+    else:
+        depth = 0.0
+
+    if jitter:
+        depth += rng.gauss(0.0, jitter * max(target_depth, 1.0))
+    return max(0.0, depth)
+
+
 def _drift_trajectory(
     start_lat: float, start_lon: float, start_time: datetime,
     n_hours: int, u_ms: float = 0.05, v_ms: float = 0.03,
     noise: float = 0.02,
-) -> list[tuple[datetime, float, float]]:
-    """Build a simple hourly trajectory with slow drift + noise."""
-    pts: list[tuple[datetime, float, float]] = []
+    cycle_hours: float = 120.0, target_depth: float | None = 60.0,
+    park_mode: str = "park_on_bottom",
+) -> list[tuple[datetime, float, float, float]]:
+    """Build a simple hourly trajectory with slow drift + noise, plus a
+    synthetic depth wave (see _depth_profile)."""
+    pts: list[tuple[datetime, float, float, float]] = []
     lat, lon = start_lat, start_lon
     for h in range(n_hours):
         t = start_time + timedelta(hours=h)
@@ -47,7 +82,31 @@ def _drift_trajectory(
         # rough lat/lon update per hour
         lat += v * 3600 / 111_000
         lon += u * 3600 / (111_000 * math.cos(math.radians(lat)))
-        pts.append((t, round(lat, 5), round(lon, 5)))
+        depth = _depth_profile(float(h), cycle_hours, target_depth, park_mode)
+        pts.append((t, round(lat, 5), round(lon, 5), round(depth, 2)))
+    return pts
+
+
+def _real_depth_history(
+    start_time: datetime, n_hours: int,
+    cycle_hours: float, target_depth: float | None, park_mode: str,
+    sample_every_min: int = 15,
+) -> list[tuple[datetime, float]]:
+    """
+    Synthetic 'real' depth-vs-time series -- same wave shape as
+    _drift_trajectory's simulated depth, sampled more densely (like a real
+    Rtraj.nc) and with jitter + a slight phase drift, so the map panel's
+    real-vs-simulated chart shows a plausible divergence rather than two
+    identical lines.
+    """
+    pts: list[tuple[datetime, float]] = []
+    n_samples = int(n_hours * 60 / sample_every_min)
+    phase_drift_h = rng.uniform(-1.5, 1.5)   # real cycle timing isn't exactly the voted estimate
+    for i in range(n_samples):
+        h = i * sample_every_min / 60.0
+        t = start_time + timedelta(minutes=i * sample_every_min)
+        depth = _depth_profile(h + phase_drift_h, cycle_hours, target_depth, park_mode, jitter=0.03)
+        pts.append((t, round(depth, 2)))
     return pts
 
 
@@ -84,6 +143,7 @@ def _make_float(
             anchor_lat, anchor_lon, anchor_time,
             n_hours=int((NOW - anchor_time).total_seconds() / 3600) + 1,
             u_ms=du, v_ms=dv,
+            cycle_hours=cycle_hours, target_depth=target_depth, park_mode=park_mode,
         )
         models[model] = ModelTrack(trajectory=traj, missed_model_pulls=0)
 
@@ -123,6 +183,20 @@ floats_db: dict[str, FloatRow] = {
         park_mode="drift_on_surface", cycle_hours=24.0, target_depth=None,
     ),
 }
+
+# --------------------------------------------------------------------------- #
+# Build synthetic real depth-vs-time history (real_depth_history.py's
+# extract_depth_time_series equivalent -- see cycle_extractor.py)
+# --------------------------------------------------------------------------- #
+
+real_depth_history: dict[str, list[tuple[datetime, float]]] = {}
+for wmo, row in floats_db.items():
+    anchor_lat, anchor_lon, anchor_time = row.last_real_position
+    n_hours = int((NOW - anchor_time).total_seconds() / 3600) + 1
+    real_depth_history[wmo] = _real_depth_history(
+        anchor_time, n_hours,
+        row.cycle_action.cycle_hours, row.cycle_action.target_depth, row.cycle_action.park_mode,
+    )
 
 # --------------------------------------------------------------------------- #
 # Build synthetic error history (last 45 days)
@@ -167,7 +241,9 @@ error_db = pd.DataFrame(error_rows)
 # Write JSON
 # --------------------------------------------------------------------------- #
 
-export_floats(floats_db, error_db, NOW)
+leg_history_db = pd.DataFrame()  # no synthetic leg-path data -- map falls back to straight lines
+
+export_floats(floats_db, error_db, leg_history_db, real_depth_history, NOW)
 export_leaderboard(error_db)
 print(f"Wrote docs/data/floats.json ({len(floats_db)} floats)")
 print(f"Wrote docs/data/leaderboard.json ({len(error_rows)} scoring events)")

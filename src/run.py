@@ -161,8 +161,10 @@ def run(config_path: Path | None = None) -> None:
     float_store.save_cycle_action_history(STORE_DIR, cycle_action_history_db)
     float_store.save_leg_history(STORE_DIR, leg_history_db)
 
+    real_depth_history = _build_real_depth_history(floats_db)
+
     now = datetime.utcnow()
-    web_export.export_floats(floats_db, error_db, leg_history_db, now)
+    web_export.export_floats(floats_db, error_db, leg_history_db, real_depth_history, now)
     web_export.export_leaderboard(error_db)
 
 
@@ -646,6 +648,31 @@ def _backfill_surfacing_history(floats_db: dict[str, FloatRow]) -> None:
             logger.info("Backfilled %d surfacings for float %s", len(row.surfacing_history), row.float_id)
         except Exception:
             logger.debug("Could not backfill surfacing history for %s", row.float_id, exc_info=True)
+
+
+def _build_real_depth_history(floats_db: dict[str, FloatRow]) -> dict[str, list[tuple[datetime, float]]]:
+    """
+    Real depth-vs-time history per float, for web_export's map-panel
+    depth-vs-time chart (real vs. simulated). Reads each float's Rtraj.nc
+    straight from ARGO_CACHE_DIR -- already re-downloaded fresh this run by
+    _refresh_cycle_actions (force_refresh=True), so this is a local file
+    read, not a second network fetch. A float with no cached Rtraj.nc yet
+    (registration failed, or hasn't run since this feature was added) is
+    simply omitted -- web_export treats a missing entry as "no real depth
+    data available" for that float, not an error.
+    """
+    result: dict[str, list[tuple[datetime, float]]] = {}
+    for row in floats_db.values():
+        if row.is_dead:
+            continue
+        rtraj_path = ARGO_CACHE_DIR / f"{row.float_id}_Rtraj.nc"
+        if not rtraj_path.exists():
+            continue
+        try:
+            result[row.float_id] = cycle_extractor.extract_depth_time_series(rtraj_path)
+        except Exception:
+            logger.debug("Could not extract depth time series for %s", row.float_id, exc_info=True)
+    return result
 
 
 # --------------------------------------------------------------------------- #

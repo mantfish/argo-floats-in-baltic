@@ -2,8 +2,15 @@ name: Run leaderboard pipeline
 
 on:
   schedule:
-    - cron: '30 4 * * *'   # ~04:30 UTC -- after the 00Z FCOO run is published
-    - cron: '30 16 * * *'  # ~16:30 UTC -- after the 12Z FCOO run is published
+    # 4h after each FCOO run is published (~04:00/~16:00 UTC), not 30 min
+    # after -- data.fcoo.dk was observed to time out/refuse connections far
+    # more often right after publish, presumably its own busiest window
+    # (every other consumer chasing the same fresh file). See
+    # data_handler.py's _FCOO_LOAD_MAX_RETRIES docstring for the retry
+    # policy that absorbs whatever intermittent failures remain even at
+    # this later offset.
+    - cron: '0 8 * * *'   # ~08:00 UTC -- 4h after the 00Z FCOO run is published
+    - cron: '0 20 * * *'  # ~20:00 UTC -- 4h after the 12Z FCOO run is published
   workflow_dispatch: {}     # lets you trigger a run manually from the Actions tab
 
 permissions:

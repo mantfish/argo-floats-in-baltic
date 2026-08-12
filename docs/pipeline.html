@@ -355,7 +355,7 @@
       <g class="dgm-box">
         <rect x="770" y="440" width="230" height="70" rx="10" stroke-dasharray="4 3"/>
         <text x="786" y="463" class="label" style="font-size:12px">GitHub Actions cron</text>
-        <text x="786" y="479" class="sub">04:30 &amp; 16:30 UTC daily</text>
+        <text x="786" y="479" class="sub">08:00 &amp; 20:00 UTC daily</text>
         <text x="786" y="495" class="sub">runs `uv run main.py`, commits results</text>
       </g>
       <path d="M885,440 L885,400 L730,255" class="dgm-arrow" marker-end="url(#arrow)" stroke-dasharray="4 3"/>
@@ -459,12 +459,21 @@
           <div class="step-title">Persist &amp; export</div>
           <div class="step-desc">
             All seven state tables are written back to <code>data/store/*.parquet</code>
-            (<code>float_store.save_*</code>), then <code>web_export.export_floats</code> and
-            <code>export_leaderboard</code> flatten the in-memory state into
-            <code>docs/data/floats.json</code> and <code>docs/data/leaderboard.json</code> —
-            the only two files this page's and the map's frontend JavaScript ever fetch.
-            The GitHub Actions workflow commits both the parquet state and the JSON export
-            back to the repo.
+            (<code>float_store.save_*</code>). <code>run._build_real_depth_history</code> then
+            re-reads each live float's <code>Rtraj.nc</code> straight from
+            <code>ARGO_CACHE_DIR</code> (already fresh from step 1, so no second network fetch)
+            and pulls out <em>every</em> raw (time, pressure) measurement pair via
+            <code>cycle_extractor.extract_depth_time_series</code> — not just the DESC/PARKING/
+            ASC-coded subsets step 1 uses for cycle summary stats. <code>web_export.export_floats</code>
+            and <code>export_leaderboard</code> flatten the in-memory state (plus that real
+            depth-vs-time series) into <code>docs/data/floats.json</code> and
+            <code>docs/data/leaderboard.json</code> — the only two files this page's and the
+            map's frontend JavaScript ever fetch. <code>floats.json</code>'s per-float
+            <code>real_depth_history</code> is what the map panel's depth-vs-time chart plots
+            against each model's own <code>trajectory_history</code> depth field — this real
+            series is recomputed fresh from the cache every run, not persisted to parquet,
+            since <code>Rtraj.nc</code> itself is already the durable record. The GitHub Actions
+            workflow commits both the parquet state and the JSON export back to the repo.
           </div>
         </div>
       </div>
@@ -486,7 +495,7 @@
         </tr>
         <tr>
           <td class="key">cycle_extractor.py</td>
-          <td>Pure computation: turns a float's raw <code>.traj</code> history into per-cycle metadata, then a single representative <code>ControlAction</code>. <code>park_on_bottom</code> comes straight from Argo's own per-cycle <code>GROUNDED</code> QC flag — no bathymetry-based inference.</td>
+          <td>Pure computation: turns a float's raw <code>.traj</code> history into per-cycle metadata, then a single representative <code>ControlAction</code>. <code>park_on_bottom</code> comes straight from Argo's own per-cycle <code>GROUNDED</code> QC flag — no bathymetry-based inference. <code>extract_depth_time_series</code> separately pulls the float's full raw (time, pressure) record for the map panel's depth-vs-time chart.</td>
           <td>No I/O — takes a local file path, returns dicts/dataclasses.</td>
         </tr>
         <tr>
@@ -501,7 +510,7 @@
         </tr>
         <tr>
           <td class="key">web_export.py</td>
-          <td>Flattens in-memory state into the two JSON files the static frontend reads.</td>
+          <td>Flattens in-memory state — including the real depth-vs-time series run.py reads from each float's Rtraj.nc cache — into the two JSON files the static frontend reads.</td>
           <td>Pure function of its inputs → writes <code>docs/data/*.json</code>.</td>
         </tr>
         <tr>

@@ -268,6 +268,63 @@
   }
   .p-model-name .swatch { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
 
+  /* Depth-vs-time chart */
+  .p-depth-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 10px;
+  }
+  .p-depth-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--ink-1);
+  }
+  .p-depth-legend-swatch {
+    width: 14px; height: 0;
+    border-top: 2px solid;
+    flex-shrink: 0;
+  }
+  .p-depth-legend-swatch.dashed { border-top-style: dashed; }
+  .p-depth-scroll {
+    display: flex;
+    align-items: stretch;
+    height: 190px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--paper);
+  }
+  .p-depth-yaxis {
+    position: sticky;
+    left: 0;
+    flex-shrink: 0;
+    width: 40px;
+    background: var(--paper);
+    border-right: 1px solid var(--line);
+    z-index: 1;
+  }
+  .p-depth-yaxis-label {
+    position: absolute;
+    font-size: 9px;
+    color: var(--ink-2);
+    right: 6px;
+    transform: translateY(-50%);
+    white-space: nowrap;
+  }
+  .p-depth-svg { display: block; flex-shrink: 0; }
+  .p-depth-empty {
+    font-size: 11px;
+    color: var(--ink-2);
+    padding: 10px 0;
+  }
+  .p-depth-scroll::-webkit-scrollbar { height: 5px; }
+  .p-depth-scroll::-webkit-scrollbar-track { background: var(--paper-2); }
+  .p-depth-scroll::-webkit-scrollbar-thumb { background: var(--line-hi); border-radius: 3px; }
+
   /* Scroll bar */
   #panel::-webkit-scrollbar { width: 5px; }
   #panel::-webkit-scrollbar-track { background: var(--paper-2); }
@@ -498,6 +555,122 @@ function diamondIcon(color) {
   });
 }
 
+// ─── Depth-vs-time chart ────────────────────────────────────────────────────
+function parseIsoUTC(iso) {
+  return new Date(iso + (iso.includes('Z') ? '' : 'Z'));
+}
+
+function niceDepthTicks(maxVal, count) {
+  if (maxVal <= 0) return [0];
+  const rawStep = maxVal / count;
+  const mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
+  const norm = rawStep / mag;
+  let step;
+  if (norm < 1.5) step = 1 * mag;
+  else if (norm < 3) step = 2 * mag;
+  else if (norm < 7) step = 5 * mag;
+  else step = 10 * mag;
+  const ticks = [];
+  for (let v = 0; v <= maxVal + step * 1e-6; v += step) ticks.push(Math.round(v * 100) / 100);
+  return ticks;
+}
+
+function fmtChartDate(t, totalHours) {
+  const mm = t.getUTCMonth() + 1, dd = t.getUTCDate();
+  if (totalHours > 72) return `${mm}/${dd}`;
+  return `${mm}/${dd} ${String(t.getUTCHours()).padStart(2, '0')}h`;
+}
+
+function buildDepthChartHTML(f) {
+  const series = [];
+
+  const real = (f.real_depth_history || []).map(p => ({ t: parseIsoUTC(p.t), depth: p.depth }));
+  if (real.length >= 2) {
+    series.push({ name: 'Real (Argo)', color: '#D6422E', dashed: true, points: real });
+  }
+  for (const [key, m] of Object.entries(f.models)) {
+    const pts = (m.trajectory_history || [])
+      .filter(p => p.depth !== null && p.depth !== undefined)
+      .map(p => ({ t: parseIsoUTC(p.t), depth: p.depth }));
+    if (pts.length >= 2) {
+      series.push({ name: m.display_name, color: MODEL_COLORS[key] || '#8C8C82', dashed: false, points: pts });
+    }
+  }
+
+  let body;
+  if (!series.length) {
+    body = `<div class="p-depth-empty">No depth history available yet for this float.</div>`;
+  } else {
+    let minT = Infinity, maxT = -Infinity, maxDepth = 0;
+    for (const s of series) {
+      for (const p of s.points) {
+        if (p.t < minT) minT = p.t;
+        if (p.t > maxT) maxT = p.t;
+        if (p.depth > maxDepth) maxDepth = p.depth;
+      }
+    }
+    const totalHours = (maxT - minT) / 3600000;
+    const plotWidth = Math.max(280, Math.min(3000, totalHours * 8));
+    const plotTop = 10, plotBottom = 150, svgHeight = 190;
+    const depthDomain = Math.max(10, maxDepth * 1.08);
+
+    const xScale = t => ((t - minT) / ((maxT - minT) || 1)) * plotWidth;
+    const yScale = d => plotTop + (Math.min(d, depthDomain) / depthDomain) * (plotBottom - plotTop);
+
+    const yTicks = niceDepthTicks(depthDomain, 4);
+    const N_X_TICKS = 6;
+    const xTicks = Array.from({ length: N_X_TICKS + 1 },
+      (_, i) => new Date(minT.getTime() + (i / N_X_TICKS) * (maxT - minT)));
+
+    const GRID = 'rgba(20,20,15,0.10)';
+    const INK2 = '#8C8C82';
+
+    const gridLines = yTicks.map(d =>
+      `<line x1="0" y1="${yScale(d).toFixed(1)}" x2="${plotWidth}" y2="${yScale(d).toFixed(1)}" stroke="${GRID}" stroke-width="1"/>`
+    ).join('');
+    const xGridLines = xTicks.map(t =>
+      `<line x1="${xScale(t).toFixed(1)}" y1="${plotTop}" x2="${xScale(t).toFixed(1)}" y2="${plotBottom}" stroke="${GRID}" stroke-width="1"/>`
+    ).join('');
+    const xLabels = xTicks.map(t =>
+      `<text x="${xScale(t).toFixed(1)}" y="${plotBottom + 16}" font-size="9" fill="${INK2}" text-anchor="middle">${fmtChartDate(t, totalHours)}</text>`
+    ).join('');
+    const lines = series.map(s => {
+      const pts = s.points.slice().sort((a, b) => a.t - b.t);
+      const path = pts.map(p => `${xScale(p.t).toFixed(1)},${yScale(p.depth).toFixed(1)}`).join(' ');
+      return `<polyline points="${path}" fill="none" stroke="${s.color}" stroke-width="1.8" ` +
+        `stroke-opacity="0.9" stroke-linejoin="round" ${s.dashed ? 'stroke-dasharray="3 3"' : ''}/>`;
+    }).join('');
+
+    const yLabels = yTicks.map(d =>
+      `<div class="p-depth-yaxis-label" style="top:${yScale(d).toFixed(1)}px">${d}</div>`
+    ).join('');
+
+    body = `
+      <div class="p-depth-legend">
+        ${series.map(s => `
+          <div class="p-depth-legend-item">
+            <span class="p-depth-legend-swatch${s.dashed ? ' dashed' : ''}" style="border-color:${s.color}"></span>
+            ${s.name}
+          </div>`).join('')}
+      </div>
+      <div class="p-depth-scroll">
+        <div class="p-depth-yaxis" style="height:${svgHeight}px">${yLabels}</div>
+        <svg class="p-depth-svg" width="${plotWidth.toFixed(0)}" height="${svgHeight}"
+             viewBox="0 0 ${plotWidth.toFixed(0)} ${svgHeight}">
+          ${gridLines}${xGridLines}${lines}${xLabels}
+        </svg>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="p-section">
+      <div class="p-section-label">Depth vs. Time (dbar)</div>
+      ${body}
+    </div>
+  `;
+}
+
 // ─── Panel rendering ──────────────────────────────────────────────────────────
 function renderPanel(f) {
   const ca = f.cycle_action;
@@ -557,6 +730,11 @@ function renderPanel(f) {
       </div>
     </div>
   `;
+
+  // Depth-vs-time chart: real (Argo Rtraj.nc pressure record) vs. each
+  // model's own simulated depth, over the same recent window as the map's
+  // trajectory history.
+  html += buildDepthChartHTML(f);
 
   // Per-model blocks
   html += `<div class="p-section"><div class="p-section-label">Model Predictions</div>`;

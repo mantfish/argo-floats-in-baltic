@@ -263,23 +263,59 @@ _fcoo_ds_cache: dict[str, xr.Dataset] = {}
 # against live corruption behavior the way dk/idk's sizes were).
 _FCOO_TIME_CHUNK = {"dk": 8, "idk": 3, "surface": 8}
 
-# The corruption itself is a genuine, confirmed-intermittent upstream
-# pydap/OPeNDAP server issue (reproduced live: identical requests fail then
-# succeed then fail again, no correlation found with request size, caching,
-# or time-of-day) -- retrying with a fresh connection is the right response,
-# it just needs enough attempts/time to outlast a bad window. 5 attempts
-# (~165s of backoff) wasn't always enough; 8 attempts with backoff capped at
-# 60s (~330s total) gives a longer runway without any one retry ballooning.
+# data.fcoo.dk is a genuine, confirmed-intermittent upstream server --
+# both silent data corruption on an otherwise-successful request (reproduced
+# live: identical requests fail then succeed then fail again, no correlation
+# found with request size, caching, or time-of-day) and outright connection
+# timeouts/refusals, the latter observed most often close to FCOO's own
+# 00Z/12Z publish times -- part of why run-pipeline.yml schedules this
+# pipeline 4h after publish rather than right on top of it (see its cron
+# comments), though that's a mitigation, not a guarantee, hence retrying
+# here too. Retrying with a fresh connection is the right response; it just
+# needs enough attempts/time to outlast a bad window. 5 attempts (~165s of backoff)
+# wasn't always enough for the corruption case; 8 attempts with backoff
+# capped at 60s (~330s total) gives a longer runway without any one retry
+# ballooning. Shared by every FCOO network touchpoint: the directory listing
+# (_list_getm_files), each grid's cheap metadata-only open
+# (_open_fcoo_dataset_retrying), and the actual chunked variable reads
+# (_load_fcoo_var_chunked) -- all of them hit the same flaky server, so all
+# of them use the same policy.
 _FCOO_LOAD_MAX_RETRIES = 8
 _FCOO_LOAD_BACKOFF_CAP_S = 60
 
 
 def _list_getm_files() -> list[str]:
-    """Scrape the FCOO GETM directory for available NetCDF filenames."""
-    resp = requests.get(FCOO_BASE, timeout=20, headers={"User-Agent": _BROWSER_UA})
-    resp.raise_for_status()
-    # hrefs end in .nc.html; extract just the .nc filename
-    return re.findall(r'([^\s/"]+\.nc)\.html', resp.text)
+    """
+    Scrape the FCOO GETM directory for available NetCDF filenames.
+
+    Retried with backoff (same policy as _load_fcoo_var_chunked's data
+    reads -- see _FCOO_LOAD_MAX_RETRIES/_FCOO_LOAD_BACKOFF_CAP_S's docstring
+    on data.fcoo.dk's confirmed intermittent connectivity). This is the
+    very first FCOO network call every pipeline run, so without its own
+    retry, a single connection hiccup here used to freeze the entire fcoo
+    model for the whole round even though every downstream FCOO data call
+    already retries -- run-pipeline.yml's 4h-after-publish schedule reduces
+    how often that hiccup happens, but doesn't eliminate it.
+    """
+    last_exc: Optional[Exception] = None
+    for attempt in range(_FCOO_LOAD_MAX_RETRIES):
+        try:
+            resp = requests.get(FCOO_BASE, timeout=20, headers={"User-Agent": _BROWSER_UA})
+            resp.raise_for_status()
+            # hrefs end in .nc.html; extract just the .nc filename
+            return re.findall(r'([^\s/"]+\.nc)\.html', resp.text)
+        except Exception as exc:
+            last_exc = exc
+            if attempt < _FCOO_LOAD_MAX_RETRIES - 1:
+                sleep_s = min(5 * 2 ** attempt, _FCOO_LOAD_BACKOFF_CAP_S)
+                logger.warning(
+                    "FCOO directory listing attempt %d/%d failed (%s), retrying in %ds",
+                    attempt + 1, _FCOO_LOAD_MAX_RETRIES, exc, sleep_s,
+                )
+                time.sleep(sleep_s)
+    raise RuntimeError(
+        f"Could not list FCOO GETM directory after {_FCOO_LOAD_MAX_RETRIES} attempts"
+    ) from last_exc
 
 
 def _latest_getm_file(files: list[str], prefix: str) -> str | None:
@@ -319,6 +355,37 @@ def _get_fcoo_session() -> requests.Session:
 def _open_fcoo_dataset(url: str) -> xr.Dataset:
     """Open a FCOO OPeNDAP URL via pydap, using the shared browser-UA session."""
     return xr.open_dataset(url, engine="pydap", session=_get_fcoo_session())
+
+
+def _open_fcoo_dataset_retrying(url: str) -> xr.Dataset:
+    """
+    _open_fcoo_dataset, retried with backoff (same policy as
+    _list_getm_files/_load_fcoo_var_chunked -- see
+    _FCOO_LOAD_MAX_RETRIES/_FCOO_LOAD_BACKOFF_CAP_S's docstring).
+
+    Used only for the cheap metadata/coords-only open at the top of
+    _build_fcoo_dataset/_build_fcoo_surface_dataset -- the small request
+    that happens before either function's own chunked, already-retried
+    variable loads even start. Without its own retry, a single connection
+    hiccup on this first touch of a grid's data used to fail that whole
+    grid for the round, same failure mode _list_getm_files had.
+    """
+    last_exc: Optional[Exception] = None
+    for attempt in range(_FCOO_LOAD_MAX_RETRIES):
+        try:
+            return _open_fcoo_dataset(url)
+        except Exception as exc:
+            last_exc = exc
+            if attempt < _FCOO_LOAD_MAX_RETRIES - 1:
+                sleep_s = min(5 * 2 ** attempt, _FCOO_LOAD_BACKOFF_CAP_S)
+                logger.warning(
+                    "FCOO metadata open attempt %d/%d failed for %s (%s), retrying in %ds",
+                    attempt + 1, _FCOO_LOAD_MAX_RETRIES, url, exc, sleep_s,
+                )
+                time.sleep(sleep_s)
+    raise RuntimeError(
+        f"Could not open FCOO dataset at {url} after {_FCOO_LOAD_MAX_RETRIES} attempts"
+    ) from last_exc
 
 
 def _get_fcoo_z3d_url() -> str:
@@ -383,7 +450,7 @@ def _load_fcoo_var_chunked(url: str, var_name: str, sel: dict, n_time: int, chun
     by ~8 timesteps too.
     """
     chunks = []
-    ds = _open_fcoo_dataset(url)
+    ds = _open_fcoo_dataset_retrying(url)
     for t0 in range(0, n_time, chunk_size):
         t1 = min(t0 + chunk_size, n_time)
         chunk_sel = dict(sel, time=slice(t0, t1))
@@ -517,7 +584,7 @@ def _build_fcoo_dataset(url: str, suffix: str, region: Region) -> xr.Dataset:
     lat_name, lon_name, zax_name = f"latc_{suffix}", f"lonc_{suffix}", f"zax_{suffix}"
     u_name, v_name = f"uu_{suffix}", f"vv_{suffix}"
 
-    ds = _open_fcoo_dataset(url)   # cheap: metadata + small 1-D coords only, here
+    ds = _open_fcoo_dataset_retrying(url)   # cheap: metadata + small 1-D coords only, here
     latc = ds[lat_name].values
     lonc = ds[lon_name].values
     times = ds["time"].values
@@ -592,7 +659,7 @@ def _build_fcoo_surface_dataset(url: str, region: Region) -> xr.Dataset:
     lat_name, lon_name = "latc", "lonc"
     u_name, v_name = "uu", "vv"
 
-    ds = _open_fcoo_dataset(url)   # cheap: metadata + small 1-D coords only, here
+    ds = _open_fcoo_dataset_retrying(url)   # cheap: metadata + small 1-D coords only, here
     latc = ds[lat_name].values
     lonc = ds[lon_name].values
     times = ds["time"].values

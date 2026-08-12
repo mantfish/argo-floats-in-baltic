@@ -132,14 +132,18 @@ def export_floats(
     floats_db: dict[str, FloatRow],
     error_db: pd.DataFrame,
     leg_history_db: pd.DataFrame,
+    real_depth_history: dict[str, list[tuple[datetime, float]]],
     now: datetime,
 ) -> list[dict]:
     """
     Build floats.json: per-float current predictions, next-surfacing estimates,
-    recent trajectory history for each model, and past scoring history (real
+    recent trajectory history for each model, past scoring history (real
     vs. each model's predicted position at each past surfacing, plus the
     actual simulated path for that leg where leg_history has it -- what the
-    map draws error lines from).
+    map draws error lines from), and real depth-vs-time history (run.py's
+    _build_real_depth_history, read straight from each float's cached
+    Rtraj.nc) -- what the map panel's depth-vs-time chart plots against each
+    model's own trajectory_history depth field, per float.
 
     `now` is the reference time for "predicted_now" lookups and is embedded in
     the output so the frontend can show data age.
@@ -210,6 +214,11 @@ def export_floats(
                 for lat, lon, t in row.surfacing_history
             ],
             "scoring_history": scoring_by_float.get(float_id, []),
+            "real_depth_history": [
+                {"t": t.isoformat(), "depth": round(depth, 2)}
+                for t, depth in real_depth_history.get(float_id, [])
+                if t >= cutoff
+            ],
             "cycle_action": {
                 "park_mode": ca.park_mode,
                 "cycle_hours": ca.cycle_hours,

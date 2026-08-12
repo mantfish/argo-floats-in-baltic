@@ -38,10 +38,12 @@ from __future__ import annotations
 
 import math
 from collections import Counter
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
 import numpy as np
+import pandas as pd
 import xarray as xr
 
 from .simulate import ControlAction
@@ -281,6 +283,34 @@ def extract_cycles(rtraj_path: Path) -> list[dict]:
 
     ds.close()
     return [meta[c] for c in cycle_numbers if c in meta]
+
+
+def extract_depth_time_series(rtraj_path: Path) -> list[tuple[datetime, float]]:
+    """
+    Every (time, pressure) measurement pair recorded anywhere in `rtraj_path`
+    -- across all cycles and all phases (descent, parking, ascent, surface
+    drift, ...), not just the DESC/PARKING/ASC-coded subsets extract_cycles
+    uses for its per-cycle summary stats. This is the float's actual raw
+    real depth-vs-time history, sorted ascending by time.
+
+    PRES is dbar, the same unit as ModelTrack.trajectory's depth field and
+    ControlAction.target_depth, so callers can plot real against simulated
+    depth on one axis with no conversion. Used only by web_export/run.py to
+    feed the map panel's depth-vs-time chart (real vs. simulated) -- not
+    read by any simulation or scoring logic, so a coarse/noisy point here
+    can't affect cycle_action or error_db.
+    """
+    rtraj_path = Path(rtraj_path)
+    ds = xr.open_dataset(rtraj_path)
+    juld = ds.JULD.values
+    pres = ds.PRES.values.astype(float)
+    valid = ~np.isnat(juld) & ~np.isnan(pres)
+    points = sorted(
+        (pd.Timestamp(t).to_pydatetime(), float(p))
+        for t, p in zip(juld[valid], pres[valid])
+    )
+    ds.close()
+    return points
 
 
 def action_from_cycle(cyc: dict, next_cyc: dict) -> ControlAction:
