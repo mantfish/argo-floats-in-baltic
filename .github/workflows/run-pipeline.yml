@@ -13,6 +13,19 @@ on:
     - cron: '0 20 * * *'  # ~20:00 UTC -- 4h after the 12Z FCOO run is published
   workflow_dispatch: {}     # lets you trigger a run manually from the Actions tab
 
+# Serialize runs -- each run fully recomputes data/store/*.parquet and
+# docs/data/*.json from scratch (not an incremental diff) and commits the
+# whole thing. Two runs overlapping (e.g. a manual workflow_dispatch while
+# a scheduled run is still mid-flight) each build a diverging full snapshot
+# and race to push; the loser's `git pull --rebase` can't reconcile it since
+# parquet is binary (unmergeable) and the JSON is a full rewrite, not an
+# append -- confirmed live 2026-08-12 (two ~80-min-apart runs conflicted on
+# every changed file). cancel-in-progress: false queues a newly-triggered
+# run behind the current one instead of racing or killing it mid-pipeline.
+concurrency:
+  group: run-pipeline
+  cancel-in-progress: false
+
 permissions:
   contents: write   # required so this workflow can commit + push results back
 
