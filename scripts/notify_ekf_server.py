@@ -60,7 +60,7 @@ def _is_new_surfacing(float_id: str, last_time, before: pd.DataFrame) -> bool:
 
 
 def _notify_one(base_url: str, float_id: str, last_lat: float, last_lon: float, last_time, is_new: bool) -> None:
-    update_resp = requests.post(f"{base_url}/update_state", params={"float_id": float_id}, timeout=300)
+    update_resp = requests.post(f"{base_url}/update_state", params={"float_id": float_id}, timeout=720)
     if update_resp.status_code == 404:
         logger.info("Float %s is not piloted by the EKF server, skipping.", float_id)
         return
@@ -77,7 +77,7 @@ def _notify_one(base_url: str, float_id: str, last_lat: float, last_lon: float, 
         "time_of_transmission": pd.Timestamp(last_time).isoformat(),
     }
     files = {"file": ("surfacing.json", json.dumps(payload), "application/json")}
-    trigger_resp = requests.post(f"{base_url}/return_action", files=files, timeout=300)
+    trigger_resp = requests.post(f"{base_url}/return_action", files=files, timeout=720)
     trigger_resp.raise_for_status()
     logger.info(
         "Float %s surfaced at %s -- EKF server selected action: %s",
