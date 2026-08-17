@@ -427,7 +427,15 @@
             (<code>missed_model_pulls += 1</code>) rather than backfilled. Each real model also
             runs a parallel <em>shadow</em> track with <code>force_drift=True</code>, so
             <code>park_on_bottom</code> floats still drift with the parking-depth current for
-            comparison — never shown on the public leaderboard/map.
+            comparison — never shown on the public leaderboard/map. The RK4 loop is capped at
+            200,000 iterations (<code>simulate._MAX_ITERATIONS</code>) — a real multi-day span
+            is a few thousand steps even at the finest resolution the whole way, so hitting the
+            cap means a step-size edge case has stalled the loop, not that the span is
+            legitimately large. Confirmed live (2026-08-17): one float's call hung indefinitely
+            with no exception and no progress, silently consuming an entire CI run's time budget.
+            The cap turns that into an immediate, diagnosable <code>RuntimeError</code> instead —
+            caught by the existing per-track <code>try/except</code>, so one stuck float no longer
+            blocks every other float/model behind it.
           </div>
         </div>
       </div>

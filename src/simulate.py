@@ -46,6 +46,14 @@ _PARKING = "parking"
 _ASCENDING = "ascending"
 _COMMUNICATING = "communicating"
 
+# simulate_cycle's RK4 loop safety valve -- see its use there. Even the
+# pessimistic case of dt_fine=60s for an entire multi-day span (the
+# longest gap this pipeline ever asks for, config.toml's 5-day fetch
+# window) is on the order of a few thousand steps; this is two orders of
+# magnitude above that, so tripping it means the loop is stuck, not just
+# covering a large span.
+_MAX_ITERATIONS = 200_000
+
 
 @dataclass(frozen=True)
 class ControlAction:
@@ -858,10 +866,37 @@ def simulate_cycle(
         return min(dt_parked, next_boundary - cycle_elapsed)
 
     points: list[tuple[datetime, float, float, float]] = []
+    n_iter = 0
 
     while t < until_time:
+        n_iter += 1
+        if n_iter > _MAX_ITERATIONS:
+            # A multi-day span at the finest resolution (dt_fine=60s the
+            # whole way, the pessimistic case) is a few thousand steps at
+            # most -- this many iterations without reaching until_time
+            # means something is stuck (a step-size/phase-boundary edge
+            # case producing a near-zero or non-advancing step), not a
+            # merely-large-but-legitimate span. Raising here converts what
+            # was, in production, a silent multi-hour hang eating the
+            # entire CI budget (2026-08-17 -- run.py's simulate_cycle call
+            # is already wrapped in try/except, so this fails one float
+            # loudly and fast instead of blocking every other float/model
+            # behind it) into an immediate, diagnosable failure.
+            raise RuntimeError(
+                f"simulate_cycle: exceeded {_MAX_ITERATIONS} iterations without reaching "
+                f"until_time={until_time.isoformat()} -- stuck at t={t.isoformat()}, "
+                f"elapsed={elapsed:.3f}s, cycle_elapsed={elapsed % total_cycle_s:.3f}s "
+                f"(total_cycle_s={total_cycle_s:.3f}), last step={step:.6f}s, "
+                f"anchor=({anchor_lat:.4f},{anchor_lon:.4f})@{anchor_time.isoformat()}"
+            )
+
         step = _step_size(elapsed % total_cycle_s)
         step = min(step, (until_time - t).total_seconds())
+        if step <= 0.0:
+            # Already at or past until_time -- can happen from floating-point
+            # residue in the clamp above. Stop instead of spinning on a
+            # zero/negative step forever (t would never advance).
+            break
 
         t_mid = t + timedelta(seconds=step / 2.0)
         t_end = t + timedelta(seconds=step)

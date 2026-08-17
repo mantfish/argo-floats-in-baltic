@@ -369,7 +369,22 @@ def _extend_trajectories(floats_db: dict[str, FloatRow]) -> list[dict]:
 
                 tip_time, tip_lat, tip_lon, _tip_depth = track.trajectory[-1]
                 anchor_time, anchor_lat, anchor_lon, _anchor_depth = track.trajectory[0]
+                until_time = _last_timestamp(model_data)
 
+                # Logged BEFORE the call, not just after -- simulate_cycle's RK4
+                # loop hung indefinitely for a real float in production
+                # (2026-08-17, no exception, no return, for the rest of that
+                # run's CI budget) with only an after-the-fact progress log in
+                # place, which never fired. This is what tells us which float
+                # it was if that ever happens again despite the iteration cap
+                # added the same day (simulate.py's _MAX_ITERATIONS).
+                logger.info(
+                    "Extend trajectories: starting float %s (%d/%d) track %s "
+                    "(tip=%s, until=%s, gap=%.1fh)",
+                    row.float_id, i, len(alive_rows), track_key,
+                    tip_time.isoformat(), until_time.isoformat(),
+                    (until_time - tip_time).total_seconds() / 3600.0,
+                )
                 t_float = time.monotonic()
                 try:
                     new_points = simulate.simulate_cycle(
@@ -382,7 +397,7 @@ def _extend_trajectories(floats_db: dict[str, FloatRow]) -> list[dict]:
                         tip_lat=tip_lat,
                         tip_lon=tip_lon,
                         tip_time=tip_time,
-                        until_time=_last_timestamp(model_data),
+                        until_time=until_time,
                         force_drift=force_drift,
                     )
                 except Exception:
