@@ -26,7 +26,9 @@ from __future__ import annotations
 
 import dataclasses
 import logging
+import time
 import tomllib
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -38,6 +40,28 @@ from .float_store import FloatRow, ModelTrack
 from .simulate import ControlAction
 
 logger = logging.getLogger(__name__)
+
+
+@contextmanager
+def _stage(name: str):
+    """
+    Logs `name`'s wall-clock duration at INFO on exit (success or exception).
+
+    Added 2026-08-17 purely as a diagnostic after two rounds of guessing
+    which stage was behind the pipeline exceeding its 60-minute CI budget
+    from code-reading and commit timestamps alone, with no actual timing
+    data -- see the interpolator-rebuild and _find_dac fixes earlier that
+    day. Wraps every stage in run() (and the coarser sub-stages inside
+    _extend_trajectories/_refresh_cycle_actions) so the next run's own log
+    says exactly where the time went, instead of requiring another round of
+    inference after the fact.
+    """
+    t0 = time.monotonic()
+    try:
+        yield
+    finally:
+        logger.info("Stage timing: %s took %.1fs", name, time.monotonic() - t0)
+
 
 # --------------------------------------------------------------------------- #
 # Config
@@ -126,47 +150,62 @@ CYCLE_ACTION_OVERRIDES: dict[str, dict] = {
 
 
 def run(config_path: Path | None = None) -> None:
+    run_t0 = time.monotonic()
     _build_globals(_load_config(config_path))
 
-    floats_db = float_store.load_floats_db(STORE_DIR)
-    error_db = float_store.load_error_db(STORE_DIR)
-    forecast_history_db = float_store.load_forecast_history(STORE_DIR)
-    cycle_action_history_db = float_store.load_cycle_action_history(STORE_DIR)
-    leg_history_db = float_store.load_leg_history(STORE_DIR)
+    with _stage("load stores"):
+        floats_db = float_store.load_floats_db(STORE_DIR)
+        error_db = float_store.load_error_db(STORE_DIR)
+        forecast_history_db = float_store.load_forecast_history(STORE_DIR)
+        cycle_action_history_db = float_store.load_cycle_action_history(STORE_DIR)
+        leg_history_db = float_store.load_leg_history(STORE_DIR)
 
-    _backfill_surfacing_history(floats_db)
+    logger.info("Tracking %d floats (%d alive)", len(floats_db), sum(not r.is_dead for r in floats_db.values()))
 
-    cycle_action_rows = _refresh_cycle_actions(floats_db)
+    with _stage("_backfill_surfacing_history"):
+        _backfill_surfacing_history(floats_db)
+
+    with _stage("_refresh_cycle_actions (loop 4: re-derive cycle_action from Rtraj.nc, per float)"):
+        cycle_action_rows = _refresh_cycle_actions(floats_db)
     if cycle_action_rows:
         cycle_action_history_db = pd.concat(
             [cycle_action_history_db, pd.DataFrame(cycle_action_rows)], ignore_index=True
         )
 
-    forecast_rows = _extend_trajectories(floats_db)
+    with _stage("_extend_trajectories (loop 1: model fetch + simulate_cycle, per model)"):
+        forecast_rows = _extend_trajectories(floats_db)
     if forecast_rows:
         forecast_history_db = pd.concat(
             [forecast_history_db, pd.DataFrame(forecast_rows)], ignore_index=True
         )
 
-    argo_now = data_handler.download_argo_floats_in_domain(REGION)
-    error_db, leg_history_rows = _reconcile_with_argo(floats_db, argo_now, error_db)
+    with _stage("download_argo_floats_in_domain"):
+        argo_now = data_handler.download_argo_floats_in_domain(REGION)
+
+    with _stage("_reconcile_with_argo (loop 2: score against real surfacings)"):
+        error_db, leg_history_rows = _reconcile_with_argo(floats_db, argo_now, error_db)
     if leg_history_rows:
         leg_history_db = pd.concat(
             [leg_history_db, pd.DataFrame(leg_history_rows)], ignore_index=True
         )
-    _register_new_floats(floats_db, argo_now)
 
-    float_store.save_floats_db(STORE_DIR, floats_db)
-    float_store.save_error_db(STORE_DIR, error_db)
-    float_store.save_forecast_history(STORE_DIR, forecast_history_db)
-    float_store.save_cycle_action_history(STORE_DIR, cycle_action_history_db)
-    float_store.save_leg_history(STORE_DIR, leg_history_db)
+    with _stage("_register_new_floats (loop 3)"):
+        _register_new_floats(floats_db, argo_now)
 
-    real_depth_history = _build_real_depth_history(floats_db)
+    with _stage("save stores"):
+        float_store.save_floats_db(STORE_DIR, floats_db)
+        float_store.save_error_db(STORE_DIR, error_db)
+        float_store.save_forecast_history(STORE_DIR, forecast_history_db)
+        float_store.save_cycle_action_history(STORE_DIR, cycle_action_history_db)
+        float_store.save_leg_history(STORE_DIR, leg_history_db)
 
-    now = datetime.utcnow()
-    web_export.export_floats(floats_db, error_db, leg_history_db, real_depth_history, now)
-    web_export.export_leaderboard(error_db)
+    with _stage("web_export"):
+        real_depth_history = _build_real_depth_history(floats_db)
+        now = datetime.utcnow()
+        web_export.export_floats(floats_db, error_db, leg_history_db, real_depth_history, now)
+        web_export.export_leaderboard(error_db)
+
+    logger.info("Stage timing: run() total %.1fs", time.monotonic() - run_t0)
 
 
 # --------------------------------------------------------------------------- #
@@ -259,6 +298,7 @@ def _extend_trajectories(floats_db: dict[str, FloatRow]) -> list[dict]:
                     row.models[track_key].missed_model_pulls += 1
 
     for model in MODELS:
+        t0 = time.monotonic()
         try:
             raw = data_handler.download_model_data(model, fetch_region,
                                                    issue_time=fetch_start,
@@ -270,6 +310,10 @@ def _extend_trajectories(floats_db: dict[str, FloatRow]) -> list[dict]:
             )
             _freeze_model_rows(model)
             continue
+        logger.info(
+            "Stage timing: download_model_data(%s) took %.1fs (%.2f GB)",
+            model, time.monotonic() - t0, raw.nbytes / 1e9,
+        )
 
         # Built ONCE per model per run from the untrimmed fetch, then reused
         # across every float/track below -- rebuilding per (float, track)
@@ -279,6 +323,7 @@ def _extend_trajectories(floats_db: dict[str, FloatRow]) -> list[dict]:
         # spatial grid it operates on doesn't vary by float. Confirmed as
         # the dominant cost behind the pipeline exceeding its 60-minute CI
         # budget once the tracked float count grew past ~6 (2026-08-17).
+        t0 = time.monotonic()
         try:
             interp_u, interp_v = simulate.build_interpolators(
                 raw, bathy_interp=_bathy_interp, float_id=model,
@@ -290,13 +335,12 @@ def _extend_trajectories(floats_db: dict[str, FloatRow]) -> list[dict]:
             )
             _freeze_model_rows(model)
             continue
+        logger.info("Stage timing: build_interpolators(%s) took %.1fs", model, time.monotonic() - t0)
 
         lat_min, lat_max, lon_min, lon_max = data_handler.model_domain_bounds(raw)
 
-        for row in floats_db.values():
-            if row.is_dead:
-                continue
-
+        alive_rows = [r for r in floats_db.values() if not r.is_dead]
+        for i, row in enumerate(alive_rows, start=1):
             real_anchor_lat, real_anchor_lon, real_anchor_time = row.last_real_position
             in_domain = lat_min <= real_anchor_lat <= lat_max and lon_min <= real_anchor_lon <= lon_max
 
@@ -326,6 +370,7 @@ def _extend_trajectories(floats_db: dict[str, FloatRow]) -> list[dict]:
                 tip_time, tip_lat, tip_lon, _tip_depth = track.trajectory[-1]
                 anchor_time, anchor_lat, anchor_lon, _anchor_depth = track.trajectory[0]
 
+                t_float = time.monotonic()
                 try:
                     new_points = simulate.simulate_cycle(
                         interp_u=interp_u,
@@ -347,6 +392,13 @@ def _extend_trajectories(floats_db: dict[str, FloatRow]) -> list[dict]:
                     )
                     track.missed_model_pulls += 1
                     continue
+                # Progress marker, not just a timing log -- this is the loop that used to
+                # silently eat the whole CI budget with no visible sign of life in between
+                # "download finished" and either completion or the hard timeout kill.
+                logger.info(
+                    "Extend trajectories: float %s (%d/%d) track %s: %d points in %.1fs",
+                    row.float_id, i, len(alive_rows), track_key, len(new_points), time.monotonic() - t_float,
+                )
                 track.missed_model_pulls = 0
                 track.trajectory.extend(new_points)
 
@@ -619,9 +671,9 @@ def _refresh_cycle_actions(floats_db: dict[str, FloatRow]) -> list[dict]:
     now = datetime.utcnow()
     log_rows: list[dict] = []
 
-    for row in floats_db.values():
-        if row.is_dead:
-            continue
+    alive_rows = [r for r in floats_db.values() if not r.is_dead]
+    for i, row in enumerate(alive_rows, start=1):
+        t_float = time.monotonic()
         try:
             new_action, _ = _derive_cycle_action(row.float_id)
         except Exception:
@@ -630,6 +682,17 @@ def _refresh_cycle_actions(floats_db: dict[str, FloatRow]) -> list[dict]:
                 row.float_id, exc_info=True,
             )
             continue
+        # Progress marker -- this loop's per-float cost (dominated by
+        # download_float_history/_find_dac, see data_handler.py) was the
+        # actual driver behind the pipeline exceeding its 60-minute CI
+        # budget (2026-08-17), and it ran before any other visible sign of
+        # life in the log. If a single float's line here takes much longer
+        # than the others, that float's fetch (Rtraj.nc download or DAC
+        # lookup) is the one to look at.
+        logger.info(
+            "Refresh cycle actions: float %s (%d/%d) in %.1fs",
+            row.float_id, i, len(alive_rows), time.monotonic() - t_float,
+        )
 
         changed = _cycle_action_changed(row.cycle_action, new_action)
         if changed:

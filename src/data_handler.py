@@ -811,7 +811,9 @@ def download_float_history(
     if rtraj_path.exists() and prof_path.exists() and not force_refresh:
         return rtraj_path
 
-    dac      = _find_dac(float_id)
+    t0 = time.monotonic()
+    dac = _find_dac(float_id)
+    logger.info("Stage timing: _find_dac(%s) -> %s took %.1fs", float_id, dac, time.monotonic() - t0)
     base_url = f"{GDAC_HTTP}/dac/{dac}/{float_id}"
 
     for fname in (f"{float_id}_Rtraj.nc", f"{float_id}_prof.nc"):
@@ -819,6 +821,7 @@ def download_float_history(
         local = cache_dir / fname
         if local.exists() and not force_refresh:
             continue
+        t0 = time.monotonic()
         for attempt in range(2):
             try:
                 r = requests.get(url, timeout=120, stream=True)
@@ -826,7 +829,10 @@ def download_float_history(
                 with open(local, "wb") as fh:
                     for chunk in r.iter_content(1 << 20):
                         fh.write(chunk)
-                logger.info("Downloaded %s -> %s", url, local)
+                logger.info(
+                    "Downloaded %s -> %s (%.2f MB in %.1fs)",
+                    url, local, local.stat().st_size / 1e6, time.monotonic() - t0,
+                )
                 break
             except requests.HTTPError as exc:
                 logger.warning("Could not fetch %s: %s", url, exc)
@@ -886,6 +892,7 @@ def _find_dac(float_id: str) -> str:
     if float_id in _dac_cache:
         return _dac_cache[float_id]
 
+    logger.info("DAC cache miss for float %s -- loading full argopy GDAC index", float_id)
     import argopy
 
     try:

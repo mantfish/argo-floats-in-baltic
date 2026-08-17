@@ -22,6 +22,7 @@ import json
 import logging
 import os
 import subprocess
+import time
 from pathlib import Path
 
 import pandas as pd
@@ -60,7 +61,10 @@ def _is_new_surfacing(float_id: str, last_time, before: pd.DataFrame) -> bool:
 
 
 def _notify_one(base_url: str, float_id: str, last_lat: float, last_lon: float, last_time, is_new: bool) -> None:
+    t0 = time.monotonic()
     update_resp = requests.post(f"{base_url}/update_state", params={"float_id": float_id}, timeout=720)
+    logger.info("Float %s: POST /update_state took %.1fs (status %d)",
+                float_id, time.monotonic() - t0, update_resp.status_code)
     if update_resp.status_code == 404:
         logger.info("Float %s is not piloted by the EKF server, skipping.", float_id)
         return
@@ -77,7 +81,10 @@ def _notify_one(base_url: str, float_id: str, last_lat: float, last_lon: float, 
         "time_of_transmission": pd.Timestamp(last_time).isoformat(),
     }
     files = {"file": ("surfacing.json", json.dumps(payload), "application/json")}
+    t0 = time.monotonic()
     trigger_resp = requests.post(f"{base_url}/return_action", files=files, timeout=720)
+    logger.info("Float %s: POST /return_action took %.1fs (status %d)",
+                float_id, time.monotonic() - t0, trigger_resp.status_code)
     trigger_resp.raise_for_status()
     logger.info(
         "Float %s surfaced at %s -- EKF server selected action: %s",
@@ -86,6 +93,7 @@ def _notify_one(base_url: str, float_id: str, last_lat: float, last_lon: float, 
 
 
 def notify_all() -> None:
+    t_start = time.monotonic()
     base_url = os.environ["EKF_API_BASE_URL"].rstrip("/")
 
     if not FLOATS_META_PATH.exists():
@@ -95,13 +103,20 @@ def notify_all() -> None:
     after = pd.read_parquet(FLOATS_META_PATH)
     before = _load_before_floats_meta()
 
-    for _, row in after.iterrows():
+    rows = list(after.iterrows())
+    logger.info("Notifying EKF server about %d floats", len(rows))
+    for i, (_, row) in enumerate(rows, start=1):
         float_id = str(row.float_id)
+        t_float = time.monotonic()
         try:
             is_new = _is_new_surfacing(float_id, row.last_time, before)
             _notify_one(base_url, float_id, row.last_lat, row.last_lon, row.last_time, is_new)
         except Exception:
             logger.exception("Failed to notify EKF server about float %s, continuing.", float_id)
+        logger.info("Stage timing: float %s (%d/%d) notify took %.1fs",
+                    float_id, i, len(rows), time.monotonic() - t_float)
+
+    logger.info("Stage timing: notify_all() total %.1fs", time.monotonic() - t_start)
 
 
 if __name__ == "__main__":
