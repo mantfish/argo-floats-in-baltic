@@ -343,6 +343,15 @@ def _extend_trajectories(floats_db: dict[str, FloatRow]) -> list[dict]:
         for i, row in enumerate(alive_rows, start=1):
             real_anchor_lat, real_anchor_lon, real_anchor_time = row.last_real_position
             in_domain = lat_min <= real_anchor_lat <= lat_max and lon_min <= real_anchor_lon <= lon_max
+            if not in_domain:
+                # Previously silent -- a float dropped here left zero trace in the
+                # log, indistinguishable from simply not having been reached yet.
+                logger.info(
+                    "Extend trajectories: float %s (%d/%d) outside %s domain "
+                    "(anchor %.4f,%.4f; domain lat %.4f-%.4f, lon %.4f-%.4f) -- dropping track this round",
+                    row.float_id, i, len(alive_rows), model,
+                    real_anchor_lat, real_anchor_lon, lat_min, lat_max, lon_min, lon_max,
+                )
 
             for track_key, force_drift in (
                 (model, False),
@@ -363,7 +372,15 @@ def _extend_trajectories(floats_db: dict[str, FloatRow]) -> list[dict]:
                 model_data = data_handler.trim_to_forecast_only(raw, issue_time)
 
                 if _is_empty(model_data):
-                    # Nothing beyond where this row already is -- freeze-on-gap.
+                    # Nothing beyond where this row already is -- freeze-on-gap
+                    # (design decision 6). Previously silent -- logged now for
+                    # the same reason as the in_domain drop above.
+                    logger.info(
+                        "Extend trajectories: float %s (%d/%d) track %s: no new data beyond "
+                        "tip %s -- freezing (missed_model_pulls=%d)",
+                        row.float_id, i, len(alive_rows), track_key,
+                        issue_time.isoformat(), track.missed_model_pulls + 1,
+                    )
                     track.missed_model_pulls += 1
                     continue
 

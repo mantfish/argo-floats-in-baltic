@@ -424,7 +424,11 @@
             (<code>_fill_masked_nearest</code>) — the latter was, on real data, the dominant
             cause of legs that silently never moved. A model with nothing new beyond where a row
             already is gets <strong>frozen in place</strong> for this round
-            (<code>missed_model_pulls += 1</code>) rather than backfilled. Each real model also
+            (<code>missed_model_pulls += 1</code>) rather than backfilled, and a float whose real
+            anchor falls outside this round's fetched domain has its track dropped
+            (<code>row.models.pop</code>) rather than left stale — both cases log the float and
+            reason now (previously silent, which on 2026-08-17 made a frozen/dropped float
+            indistinguishable in the log from one the loop simply hadn't reached yet). Each real model also
             runs a parallel <em>shadow</em> track with <code>force_drift=True</code>, so
             <code>park_on_bottom</code> floats still drift with the parking-depth current for
             comparison — never shown on the public leaderboard/map. The RK4 loop is capped at
