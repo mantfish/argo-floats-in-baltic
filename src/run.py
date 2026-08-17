@@ -76,6 +76,7 @@ def _build_globals(cfg: dict) -> None:
     data_handler.CMEMS_DATASET_ID = cfg["cmems"]["dataset_id"]
     data_handler.CMEMS_DEPTH_MAX  = cfg["cmems"]["max_depth_m"]
     data_handler.ARGO_CACHE_DIR   = ARGO_CACHE_DIR
+    data_handler.DAC_CACHE_PATH   = STORE_DIR / "dac_by_float.json"
 
 
 # Defaults (overwritten by run() via config)

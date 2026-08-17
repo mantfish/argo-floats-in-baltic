@@ -377,8 +377,16 @@
           <div class="step-title">Refresh cycle actions — <code>_refresh_cycle_actions</code></div>
           <div class="step-desc">
             For every live float, re-downloads <code>Rtraj.nc</code> fresh
-            (<code>force_refresh=True</code> — GDAC's file grows in place) and
-            re-derives its <code>ControlAction</code> (dive depth, cycle length, ascent/descent
+            (<code>force_refresh=True</code> — GDAC's file grows in place). Finding which DAC
+            (national data center) hosts a float is a separate lookup (<code>_find_dac</code>)
+            against argopy's full global GDAC index — unlike <code>Rtraj.nc</code>'s content, a
+            float's DAC never changes once assigned, so this result is cached both in-process
+            and on disk (<code>data/store/dac_by_float.json</code>, committed alongside the rest
+            of the store) rather than reloading the whole worldwide index per float per run. This
+            was the actual driver behind the pipeline exceeding its 60-minute CI budget
+            (2026-08-17) — the global index only grows as the Argo fleet grows, independent of
+            any change to this codebase. Once the DAC's known, <code>_refresh_cycle_actions</code>
+            re-derives the float's <code>ControlAction</code> (dive depth, cycle length, ascent/descent
             speed) across only the float's <code>recent_cycles_for_vote</code>
             (config: 5) most recent real cycles — not its full history, since floats get
             reprogrammed to a different cycle length mid-mission. Every numeric field takes the

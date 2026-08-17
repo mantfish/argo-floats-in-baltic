@@ -39,6 +39,7 @@ once depth is real rather than duplicated.
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import time
@@ -105,6 +106,14 @@ _BROWSER_UA = (
 
 GDAC_HTTP      = "https://data-argo.ifremer.fr"
 ARGO_CACHE_DIR = Path("data/argo_cache")
+
+# float_id -> DAC (national data center) mapping, persisted to disk -- see
+# _find_dac. Lives under STORE_DIR (not ARGO_CACHE_DIR) specifically so it
+# round-trips with the rest of the committed store across CI runs;
+# ARGO_CACHE_DIR is .gitignore'd (Rtraj.nc/prof.nc are meant to be
+# re-fetched fresh every run, see download_float_history), which would
+# silently discard this cache too if it lived there.
+DAC_CACHE_PATH = Path("data/store/dac_by_float.json")
 
 
 # --------------------------------------------------------------------------- #
@@ -836,8 +845,47 @@ def download_float_history(
     return rtraj_path
 
 
+_dac_cache: dict[str, str] = {}
+_dac_cache_loaded = False
+
+
+def _load_dac_cache() -> None:
+    global _dac_cache_loaded
+    if _dac_cache_loaded:
+        return
+    if DAC_CACHE_PATH.exists():
+        try:
+            _dac_cache.update(json.loads(DAC_CACHE_PATH.read_text()))
+        except Exception:
+            logger.warning(
+                "Could not read DAC cache at %s -- starting fresh", DAC_CACHE_PATH, exc_info=True,
+            )
+    _dac_cache_loaded = True
+
+
 def _find_dac(float_id: str) -> str:
-    """Look up the float's DAC in the argopy Argo index."""
+    """
+    Look up the float's DAC (national data center) in the Argo GDAC index.
+
+    A float's DAC assignment is permanent once set -- unlike Rtraj.nc's
+    content (which genuinely grows over a float's mission and needs
+    force_refresh, see download_float_history), there is nothing here that
+    ever needs re-checking for an already-resolved float. Result is cached
+    both in-process (_dac_cache) and on disk (DAC_CACHE_PATH), since without
+    caching every call reloaded argopy's full global GDAC index -- every
+    profile from every float worldwide -- from scratch. That was being done
+    once per float, every run (via _refresh_cycle_actions), and only gets
+    slower over time as the worldwide Argo fleet grows, with no local code
+    change required to trigger it. Confirmed as the actual driver behind
+    the pipeline exceeding its 60-minute CI budget (2026-08-17) -- the
+    interpolator-rebuild cost fixed earlier the same day was real but not
+    the dominant one; this lookup runs before _extend_trajectories even
+    starts.
+    """
+    _load_dac_cache()
+    if float_id in _dac_cache:
+        return _dac_cache[float_id]
+
     import argopy
 
     try:
@@ -849,7 +897,16 @@ def _find_dac(float_id: str) -> str:
             raise ValueError(f"Float {float_id} not in Argo index")
         # 'dac' column is present; fall back to parsing 'file' if absent
         if "dac" in rows.columns:
-            return str(rows["dac"].iloc[0])
-        return rows["file"].iloc[0].split("/")[0]
+            dac = str(rows["dac"].iloc[0])
+        else:
+            dac = rows["file"].iloc[0].split("/")[0]
     except Exception as exc:
         raise RuntimeError(f"Could not find DAC for float {float_id}: {exc}") from exc
+
+    _dac_cache[float_id] = dac
+    try:
+        DAC_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        DAC_CACHE_PATH.write_text(json.dumps(_dac_cache, indent=2, sort_keys=True))
+    except Exception:
+        logger.warning("Could not persist DAC cache to %s", DAC_CACHE_PATH, exc_info=True)
+    return dac

@@ -121,6 +121,16 @@ whole-frame-overwritten on save. `trajectories.parquet` and
 `depth` specifically (backfilled `NaN` on load), since both tables predate
 that column.
 
+`STORE_DIR` also holds `dac_by_float.json` -- a `float_id -> DAC` cache
+owned by `data_handler.py` (`_find_dac`), not one of the seven `float_store`
+tables above and not part of the `FloatRow` data model. It lives in
+`STORE_DIR` rather than `ARGO_CACHE_DIR` purely so it round-trips with the
+rest of the committed store across CI runs (`ARGO_CACHE_DIR` is
+`.gitignore`'d, since `Rtraj.nc`/`prof.nc` are meant to be re-fetched fresh
+every run -- see `download_float_history`'s `force_refresh`). A float's DAC
+never changes once assigned, unlike `Rtraj.nc`'s content, so unlike that
+force-refresh this cache is never invalidated.
+
 ## Design decisions worth knowing before you touch this code
 
 These were each settled deliberately, across a long design conversation --
