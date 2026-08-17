@@ -396,11 +396,15 @@
         <div>
           <div class="step-title">Extend trajectories — <code>_extend_trajectories</code></div>
           <div class="step-desc">
-            One <code>download_model_data</code> fetch per model (not per float), scoped to a
-            tight bounding box around every active float's anchor and trajectory tip
-            (<code>_active_bounding_box</code>). Each float's row is trimmed to strictly-after
-            its own trajectory tip (<code>trim_to_forecast_only</code>) and advanced with
-            <code>simulate.simulate_cycle</code>, which integrates with classic 4th-order
+            One <code>download_model_data</code> fetch <em>and</em> one
+            <code>simulate.build_interpolators</code> call per model (not per float) — the
+            spatial grid interpolators (including the land-mask nearest-fill below) are
+            expensive to build and identical across every float sharing that model's fetch, so
+            they're built once and reused, not rebuilt per float. Each float's row is only
+            trimmed to strictly-after its own trajectory tip (<code>trim_to_forecast_only</code>)
+            for the cheap "is there anything new" / "how far can this row advance" checks, then
+            advanced with <code>simulate.simulate_cycle</code>, which integrates with classic
+            4th-order
             Runge-Kutta rather than forward Euler, at an <strong>adaptive step size</strong>:
             fine (60 s) while descending, ascending, or communicating at the surface, and much
             coarser (up to 3600 s, clamped to never overshoot the next phase boundary) while at

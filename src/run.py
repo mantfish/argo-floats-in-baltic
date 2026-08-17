@@ -218,11 +218,14 @@ def _active_bounding_box(floats_db: dict[str, FloatRow], fallback: Region) -> Re
 
 def _extend_trajectories(floats_db: dict[str, FloatRow]) -> list[dict]:
     """
-    One model_data fetch per model -- not per float. trim_to_forecast_only
-    is what runs per (float, model) pair, since each row's own trajectory
-    tip defines "what this row has already consumed." That's a cheap
-    in-memory filter on already-downloaded data, not a second network call,
-    so this stays efficient despite the nested loop shape.
+    One model_data fetch AND one simulate.build_interpolators() call per
+    model -- not per float. trim_to_forecast_only still runs per (float,
+    model) pair, since each row's own trajectory tip defines "what this row
+    has already consumed," but that's a cheap lazy time-axis selection, not
+    a second network call or a rebuild of the (expensive) spatial
+    interpolators -- see build_interpolators' and simulate_cycle's
+    docstrings for why the interpolators specifically must not be rebuilt
+    per float.
 
     The fetch itself is spatially restricted to _active_bounding_box rather
     than the full REGION, to shrink the FCOO corruption surface.
@@ -246,6 +249,14 @@ def _extend_trajectories(floats_db: dict[str, FloatRow]) -> list[dict]:
     fetch_region = _active_bounding_box(floats_db, REGION)
     forecast_rows: list[dict] = []
 
+    def _freeze_model_rows(model: str) -> None:
+        for row in floats_db.values():
+            if row.is_dead:
+                continue
+            for track_key in (model, f"{model}{data_handler.SHADOW_SUFFIX}"):
+                if track_key in row.models:
+                    row.models[track_key].missed_model_pulls += 1
+
     for model in MODELS:
         try:
             raw = data_handler.download_model_data(model, fetch_region,
@@ -256,12 +267,27 @@ def _extend_trajectories(floats_db: dict[str, FloatRow]) -> list[dict]:
                 "download_model_data failed for %s -- freezing all rows this round",
                 model, exc_info=True,
             )
-            for row in floats_db.values():
-                if row.is_dead:
-                    continue
-                for track_key in (model, f"{model}{data_handler.SHADOW_SUFFIX}"):
-                    if track_key in row.models:
-                        row.models[track_key].missed_model_pulls += 1
+            _freeze_model_rows(model)
+            continue
+
+        # Built ONCE per model per run from the untrimmed fetch, then reused
+        # across every float/track below -- rebuilding per (float, track)
+        # pair (as this used to do, inside simulate_cycle, from each row's
+        # own trimmed model_data) reran build_interpolators' full-grid
+        # land-mask nearest-fill redundantly once per float, since the
+        # spatial grid it operates on doesn't vary by float. Confirmed as
+        # the dominant cost behind the pipeline exceeding its 60-minute CI
+        # budget once the tracked float count grew past ~6 (2026-08-17).
+        try:
+            interp_u, interp_v = simulate.build_interpolators(
+                raw, bathy_interp=_bathy_interp, float_id=model,
+            )
+        except Exception:
+            logger.warning(
+                "build_interpolators failed for %s -- freezing all rows this round",
+                model, exc_info=True,
+            )
+            _freeze_model_rows(model)
             continue
 
         lat_min, lat_max, lon_min, lon_max = data_handler.model_domain_bounds(raw)
@@ -301,7 +327,8 @@ def _extend_trajectories(floats_db: dict[str, FloatRow]) -> list[dict]:
 
                 try:
                     new_points = simulate.simulate_cycle(
-                        model_data=model_data,
+                        interp_u=interp_u,
+                        interp_v=interp_v,
                         control_action=row.cycle_action,
                         anchor_lat=anchor_lat,
                         anchor_lon=anchor_lon,
@@ -310,8 +337,6 @@ def _extend_trajectories(floats_db: dict[str, FloatRow]) -> list[dict]:
                         tip_lon=tip_lon,
                         tip_time=tip_time,
                         until_time=_last_timestamp(model_data),
-                        bathy_interp=_bathy_interp,
-                        float_id=row.float_id,
                         force_drift=force_drift,
                     )
                 except Exception:

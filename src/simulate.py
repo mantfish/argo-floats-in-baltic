@@ -539,6 +539,17 @@ def build_interpolators(
     """
     Build interp_u / interp_v callables from `model_data`.
 
+    Expensive: does a full-grid land-mask nearest-fill (_fill_masked_nearest,
+    a per-depth-level scipy.ndimage.distance_transform_edt) and builds a
+    RegularGridInterpolator over the whole spatial grid. Callers should call
+    this ONCE per model per run (from the untrimmed fetch) and reuse the
+    result across every float/track that shares that model's data --
+    simulate_cycle takes the built interp_u/interp_v directly rather than
+    model_data for exactly this reason: rebuilding per float redundantly
+    reran this same spatial-grid work once per (float, track) pair, which
+    was confirmed as the dominant cost behind the pipeline exceeding its
+    60-minute CI budget once the tracked float count grew (2026-08-17).
+
     For the single-grid schema (CMEMS):
         dims : time, depth, lat, lon
         vars : u, v  (m/s, eastward / northward)
@@ -697,7 +708,8 @@ def _query_uv(x, y, z, t, interp_u, interp_v, anchor_lat, anchor_lon) -> tuple[f
 
 
 def simulate_cycle(
-    model_data: xr.Dataset,
+    interp_u: Callable,
+    interp_v: Callable,
     control_action: ControlAction,
     anchor_lat: float,
     anchor_lon: float,
@@ -708,19 +720,25 @@ def simulate_cycle(
     until_time: datetime,
     dt_fine: float = 60.0,
     dt_parked: float = 600.0,
-    bathy_interp: Optional[Callable[[float, float], float]] = None,
-    float_id: str = "",
     force_drift: bool = False,
 ) -> list[tuple[datetime, float, float, float]]:
     """
     Extend a trajectory forward from `tip_time` to `until_time`, using
-    `model_data`'s currents and `control_action`'s dive profile.
+    `interp_u`/`interp_v`'s currents and `control_action`'s dive profile.
 
-    bathy_interp: optional (lat, lon) -> seabed depth callable, forwarded to
-        build_interpolators so queries deeper than a grid's real depth range
-        taper toward the seabed instead of hard zero-filling (see
-        _taper_to_seabed). float_id is only used to label that taper's log
-        warning. Both default to the old zero-fill behavior if omitted.
+    interp_u/interp_v: pre-built callables from build_interpolators (bathy
+        tapering already baked in, if any -- see that function's own
+        bathy_interp docs). Callers build these ONCE per model per run and
+        reuse them across every float/track sharing that model's fetch --
+        rebuilding per call (as this function used to do internally,
+        accepting raw model_data) reran build_interpolators' land-mask
+        nearest-fill (a per-depth-level scipy.ndimage.distance_transform_edt)
+        from scratch for every float, even though the spatial grid it
+        operates on is identical across floats within one run. That
+        redundant rebuild -- O(num_floats * num_tracks) copies of the same
+        expensive spatial-grid work -- was confirmed live as the dominant
+        cost behind the pipeline blowing past its 60-minute CI budget once
+        the tracked float count grew past ~6 (2026-08-17 diagnosis).
 
     force_drift: if True, disables the park_on_bottom skip below -- the
         float gets advected by the parking-depth current for the entire
@@ -739,12 +757,12 @@ def simulate_cycle(
         this call are reconstructed from tip_lat/tip_lon via latlon_to_xy,
         so resuming correctly does not depend on tip == anchor.
     until_time: stop extending once simulated time reaches this. Should be
-        model_data's own last available timestamp -- run.py is responsible
-        for not asking this function to extrapolate past what model_data
-        actually covers.
-    model_data: expected to already be trimmed to forecast-only timestamps
-        (data_handler.trim_to_forecast_only) before it reaches here -- this
-        function doesn't re-check that.
+        the trimmed (data_handler.trim_to_forecast_only) model_data's own
+        last available timestamp -- run.py is responsible for not asking
+        this function to extrapolate past what that row's own forecast
+        window actually covers, even though interp_u/interp_v themselves
+        are built from the untrimmed fetch and could technically answer
+        queries beyond it.
 
     Returns points strictly after tip_time as (t, lat, lon, depth) tuples --
     depth (dbar) is this same phase-recovery formula's own descent/park/
@@ -793,8 +811,6 @@ def simulate_cycle(
     # -> ascent -> communicating -> (wrap) descent. Used both by _phase()
     # and to size/clamp parked steps so they land exactly on these.
     _boundaries = (descent_s, descent_s + parking_s, descent_s + parking_s + ascent_s, total_cycle_s)
-
-    interp_u, interp_v = build_interpolators(model_data, bathy_interp=bathy_interp, float_id=float_id)
 
     x, y = latlon_to_xy(tip_lat, tip_lon, anchor_lat, anchor_lon)
     elapsed = (tip_time - anchor_time).total_seconds()
