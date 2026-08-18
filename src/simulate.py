@@ -54,6 +54,27 @@ _COMMUNICATING = "communicating"
 # covering a large span.
 _MAX_ITERATIONS = 200_000
 
+# Floor for _step_size's parking-window clamp to the next phase boundary
+# (`next_boundary - cycle_elapsed`) and for the final clamp to `until_time`.
+# Root cause of a real production hang (2026-08-17, float 6990707/7902194's
+# fcoo track, after several days of frozen tip while FCOO data was
+# unavailable): once `elapsed` has grown into the ~1e5-1e6s range from a
+# multi-day catch-up, float64's ULP there is ~1e-10s. A clamped step landing
+# within that noise floor of a boundary makes `elapsed += step` a silent
+# no-op, and separately `t + timedelta(seconds=step)` rounds to zero
+# microseconds below 0.5us -- so BOTH the phase clock and the wall-clock
+# stop advancing at once. `cycle_elapsed` then recomputes to the exact same
+# value next iteration, `_step_size` returns the exact same sub-ULP step,
+# and the loop is a genuine fixed point -- confirmed live, identical state
+# across hundreds of consecutive iterations -- not merely slow, until
+# _MAX_ITERATIONS cuts it off. That cap turns the hang into a hard failure,
+# but the failure recurs every run against the same catch-up gap, which is
+# what actually froze that track's tail (missed_model_pulls climbing
+# forever) -- the cap alone doesn't fix it. 1ms is many orders of magnitude
+# above both floors and far below any timescale current fields or the dive
+# profile change on, so snapping/overshooting by up to 1ms here is free.
+_MIN_STEP_S = 1e-3
+
 
 @dataclass(frozen=True)
 class ControlAction:
@@ -863,7 +884,10 @@ def simulate_cycle(
         if not is_parking_window:
             return dt_fine
         next_boundary = next(b for b in _boundaries if b > cycle_elapsed)
-        return min(dt_parked, next_boundary - cycle_elapsed)
+        # max(..., _MIN_STEP_S): see _MIN_STEP_S's docstring -- without this
+        # floor, a boundary-clamped step can shrink below float64/timedelta
+        # precision once `elapsed` is large and never actually advance.
+        return max(min(dt_parked, next_boundary - cycle_elapsed), _MIN_STEP_S)
 
     points: list[tuple[datetime, float, float, float]] = []
     n_iter = 0
@@ -891,12 +915,19 @@ def simulate_cycle(
             )
 
         step = _step_size(elapsed % total_cycle_s)
-        step = min(step, (until_time - t).total_seconds())
-        if step <= 0.0:
-            # Already at or past until_time -- can happen from floating-point
-            # residue in the clamp above. Stop instead of spinning on a
-            # zero/negative step forever (t would never advance).
+        remaining = (until_time - t).total_seconds()
+        if remaining <= _MIN_STEP_S:
+            # Already at, or within float64/timedelta precision of,
+            # until_time -- see _MIN_STEP_S's docstring. Sub-millisecond
+            # remaining time can't be turned into a step that reliably
+            # advances `t` (timedelta rounds below 0.5us) or `elapsed`
+            # (silently absorbed once its magnitude is large), so stop here
+            # instead of risking the same fixed-point stall this close to
+            # the end of the requested span. `remaining` can also be
+            # negative from floating-point residue in this same clamp on a
+            # prior iteration.
             break
+        step = min(step, remaining)
 
         t_mid = t + timedelta(seconds=step / 2.0)
         t_end = t + timedelta(seconds=step)

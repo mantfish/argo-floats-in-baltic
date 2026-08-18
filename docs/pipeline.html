@@ -437,9 +437,25 @@
             cap means a step-size edge case has stalled the loop, not that the span is
             legitimately large. Confirmed live (2026-08-17): one float's call hung indefinitely
             with no exception and no progress, silently consuming an entire CI run's time budget.
-            The cap turns that into an immediate, diagnosable <code>RuntimeError</code> instead —
+            The cap turned that into an immediate, diagnosable <code>RuntimeError</code> instead —
             caught by the existing per-track <code>try/except</code>, so one stuck float no longer
-            blocks every other float/model behind it.
+            blocked every other float/model behind it — but a track that hit this every run (e.g.
+            FCOO after a multi-day upstream gap) still never grew: the failure recurred against
+            the same catch-up span each time, so <code>missed_model_pulls</code> just climbed
+            forever. Root cause found and fixed the same day: the loop's parking-phase step
+            clamps to land exactly on the next phase boundary
+            (<code>next_boundary - cycle_elapsed</code>); once <code>elapsed</code> (time since
+            anchor) has grown into the ~1e5–1e6s range from a multi-day catch-up, float64's ULP
+            there exceeds a sub-millisecond step, so a clamped step landing that close to a
+            boundary made <code>elapsed += step</code> a silent no-op — and separately,
+            <code>timedelta(seconds=step)</code> rounds to zero microseconds below 0.5µs, so the
+            wall-clock stalled too. The result was a genuine fixed point (identical state across
+            hundreds of consecutive iterations, not just slow), not merely a large span. The fix
+            (<code>simulate._MIN_STEP_S</code>, 1ms) floors both this clamp and the final clamp
+            to <code>until_time</code> so a step can never shrink below what float64/timedelta
+            can actually register as progress — overshooting a boundary by up to 1ms, which is
+            negligible against dt_parked's 600s and no current field changes meaningfully on that
+            timescale anyway.
           </div>
         </div>
       </div>
