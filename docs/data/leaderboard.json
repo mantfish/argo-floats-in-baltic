@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-08-19T16:50:24.343234",
+  "updated_at": "2026-08-19T20:56:16.626812",
   "model_colors": {
     "cmems": "#00D4FF",
     "fcoo": "#FF8C42"
@@ -8,35 +8,35 @@
     "cmems": {
       "display_name": "CMEMS Baltic",
       "color": "#00D4FF",
-      "n_total": 12,
-      "mean_error_km": 1.21,
-      "median_error_km": 0.79,
+      "n_total": 13,
+      "mean_error_km": 1.11,
+      "median_error_km": 0.77,
       "mean_error_pct": 154.52,
       "median_error_pct": 101.61,
       "recent_7d": {
-        "n": 9,
-        "mean_km": 1.42
+        "n": 10,
+        "mean_km": 1.28
       },
       "recent_30d": {
-        "n": 12,
-        "mean_km": 1.21
+        "n": 13,
+        "mean_km": 1.11
       }
     },
     "fcoo": {
       "display_name": "FCOO GETM",
       "color": "#FF8C42",
-      "n_total": 5,
-      "mean_error_km": 0.61,
-      "median_error_km": 0.65,
+      "n_total": 6,
+      "mean_error_km": 0.51,
+      "median_error_km": 0.63,
       "mean_error_pct": 109.67,
       "median_error_pct": 106.39,
       "recent_7d": {
-        "n": 3,
-        "mean_km": 0.42
+        "n": 4,
+        "mean_km": 0.31
       },
       "recent_30d": {
-        "n": 5,
-        "mean_km": 0.61
+        "n": 6,
+        "mean_km": 0.51
       }
     }
   },
@@ -64,17 +64,31 @@
     },
     {
       "float_id": "6990707",
+      "model": "fcoo",
+      "t": "2026-08-17T20:45:00",
+      "error_km": 0.6,
+      "error_pct": 100.0
+    },
+    {
+      "float_id": "6990707",
       "model": "cmems",
       "t": "2026-08-17T20:45:00",
       "error_km": 0.53,
       "error_pct": 88.65
     },
     {
-      "float_id": "6990707",
+      "float_id": "7902460",
+      "model": "cmems",
+      "t": "2026-08-17T00:56:55",
+      "error_km": 0.0,
+      "error_pct": null
+    },
+    {
+      "float_id": "7902460",
       "model": "fcoo",
-      "t": "2026-08-17T20:45:00",
-      "error_km": 0.6,
-      "error_pct": 100.0
+      "t": "2026-08-17T00:56:55",
+      "error_km": 0.0,
+      "error_pct": null
     },
     {
       "float_id": "7902460",
