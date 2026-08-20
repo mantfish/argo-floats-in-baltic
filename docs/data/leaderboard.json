@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-08-19T20:56:16.626812",
+  "updated_at": "2026-08-20T02:11:17.738680",
   "model_colors": {
     "cmems": "#00D4FF",
     "fcoo": "#FF8C42"
@@ -8,39 +8,67 @@
     "cmems": {
       "display_name": "CMEMS Baltic",
       "color": "#00D4FF",
-      "n_total": 13,
-      "mean_error_km": 1.11,
+      "n_total": 15,
+      "mean_error_km": 1.1,
       "median_error_km": 0.77,
-      "mean_error_pct": 154.52,
+      "mean_error_pct": 148.39,
       "median_error_pct": 101.61,
       "recent_7d": {
-        "n": 10,
-        "mean_km": 1.28
+        "n": 12,
+        "mean_km": 1.23
       },
       "recent_30d": {
-        "n": 13,
-        "mean_km": 1.11
+        "n": 15,
+        "mean_km": 1.1
       }
     },
     "fcoo": {
       "display_name": "FCOO GETM",
       "color": "#FF8C42",
-      "n_total": 6,
-      "mean_error_km": 0.51,
-      "median_error_km": 0.63,
-      "mean_error_pct": 109.67,
+      "n_total": 8,
+      "mean_error_km": 0.6,
+      "median_error_km": 0.71,
+      "mean_error_pct": 113.0,
       "median_error_pct": 106.39,
       "recent_7d": {
-        "n": 4,
-        "mean_km": 0.31
+        "n": 6,
+        "mean_km": 0.5
       },
       "recent_30d": {
-        "n": 6,
-        "mean_km": 0.51
+        "n": 8,
+        "mean_km": 0.6
       }
     }
   },
   "recent_events": [
+    {
+      "float_id": "6990707",
+      "model": "fcoo",
+      "t": "2026-08-19T23:36:30",
+      "error_km": 0.76,
+      "error_pct": 139.32
+    },
+    {
+      "float_id": "6990707",
+      "model": "cmems",
+      "t": "2026-08-19T23:36:30",
+      "error_km": 0.45,
+      "error_pct": 81.82
+    },
+    {
+      "float_id": "7902460",
+      "model": "fcoo",
+      "t": "2026-08-19T12:53:37",
+      "error_km": 0.98,
+      "error_pct": 100.0
+    },
+    {
+      "float_id": "7902460",
+      "model": "cmems",
+      "t": "2026-08-19T12:53:37",
+      "error_km": 1.56,
+      "error_pct": 159.85
+    },
     {
       "float_id": "2904044",
       "model": "cmems",
