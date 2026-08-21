@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-08-20T20:53:35.590198",
+  "updated_at": "2026-08-21T02:07:27.621650",
   "model_colors": {
     "cmems": "#00D4FF",
     "fcoo": "#FF8C42"
@@ -8,45 +8,52 @@
     "cmems": {
       "display_name": "CMEMS Baltic",
       "color": "#00D4FF",
-      "n_total": 16,
-      "mean_error_km": 1.03,
-      "median_error_km": 0.68,
-      "mean_error_pct": 148.39,
-      "median_error_pct": 101.61,
+      "n_total": 17,
+      "mean_error_km": 1.01,
+      "median_error_km": 0.62,
+      "mean_error_pct": 144.36,
+      "median_error_pct": 101.07,
       "recent_7d": {
-        "n": 12,
-        "mean_km": 0.96
+        "n": 13,
+        "mean_km": 0.93
       },
       "recent_30d": {
-        "n": 16,
-        "mean_km": 1.03
+        "n": 17,
+        "mean_km": 1.01
       }
     },
     "fcoo": {
       "display_name": "FCOO GETM",
       "color": "#FF8C42",
-      "n_total": 9,
-      "mean_error_km": 0.53,
-      "median_error_km": 0.65,
-      "mean_error_pct": 113.0,
-      "median_error_pct": 106.39,
+      "n_total": 10,
+      "mean_error_km": 0.54,
+      "median_error_km": 0.64,
+      "mean_error_pct": 111.14,
+      "median_error_pct": 100.0,
       "recent_7d": {
-        "n": 7,
-        "mean_km": 0.43
+        "n": 8,
+        "mean_km": 0.45
       },
       "recent_30d": {
-        "n": 9,
-        "mean_km": 0.53
+        "n": 10,
+        "mean_km": 0.54
       }
     }
   },
   "recent_events": [
     {
-      "float_id": "6990707",
+      "float_id": "7902194",
+      "model": "fcoo",
+      "t": "2026-08-20T03:42:30",
+      "error_km": 0.62,
+      "error_pct": 100.0
+    },
+    {
+      "float_id": "7902194",
       "model": "cmems",
-      "t": "2026-08-19T23:36:30",
-      "error_km": 0.45,
-      "error_pct": 81.82
+      "t": "2026-08-20T03:42:30",
+      "error_km": 0.62,
+      "error_pct": 100.0
     },
     {
       "float_id": "6990707",
@@ -54,6 +61,13 @@
       "t": "2026-08-19T23:36:30",
       "error_km": 0.76,
       "error_pct": 139.32
+    },
+    {
+      "float_id": "6990707",
+      "model": "cmems",
+      "t": "2026-08-19T23:36:30",
+      "error_km": 0.45,
+      "error_pct": 81.82
     },
     {
       "float_id": "7902460",
@@ -78,13 +92,6 @@
     },
     {
       "float_id": "7902194",
-      "model": "cmems",
-      "t": "2026-08-18T02:55:00",
-      "error_km": 0.0,
-      "error_pct": null
-    },
-    {
-      "float_id": "7902194",
       "model": "fcoo",
       "t": "2026-08-18T02:55:00",
       "error_km": 0.0,
@@ -93,9 +100,9 @@
     {
       "float_id": "7902194",
       "model": "cmems",
-      "t": "2026-08-18T01:52:00",
-      "error_km": 0.59,
-      "error_pct": 101.61
+      "t": "2026-08-18T02:55:00",
+      "error_km": 0.0,
+      "error_pct": null
     },
     {
       "float_id": "7902194",
@@ -105,11 +112,11 @@
       "error_pct": 112.77
     },
     {
-      "float_id": "6990707",
+      "float_id": "7902194",
       "model": "cmems",
-      "t": "2026-08-17T20:45:00",
-      "error_km": 0.53,
-      "error_pct": 88.65
+      "t": "2026-08-18T01:52:00",
+      "error_km": 0.59,
+      "error_pct": 101.61
     },
     {
       "float_id": "6990707",
@@ -119,11 +126,11 @@
       "error_pct": 100.0
     },
     {
-      "float_id": "7902460",
-      "model": "fcoo",
-      "t": "2026-08-17T00:56:55",
-      "error_km": 0.0,
-      "error_pct": null
+      "float_id": "6990707",
+      "model": "cmems",
+      "t": "2026-08-17T20:45:00",
+      "error_km": 0.53,
+      "error_pct": 88.65
     },
     {
       "float_id": "7902460",
@@ -135,13 +142,20 @@
     {
       "float_id": "7902460",
       "model": "fcoo",
+      "t": "2026-08-17T00:56:55",
+      "error_km": 0.0,
+      "error_pct": null
+    },
+    {
+      "float_id": "7902460",
+      "model": "cmems",
       "t": "2026-08-17T00:25:16",
       "error_km": 0.0,
       "error_pct": null
     },
     {
       "float_id": "7902460",
-      "model": "cmems",
+      "model": "fcoo",
       "t": "2026-08-17T00:25:16",
       "error_km": 0.0,
       "error_pct": null
