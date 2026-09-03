@@ -148,6 +148,19 @@ CYCLE_ACTION_OVERRIDES: dict[str, dict] = {
     ),
 }
 
+# Every float NOT in CYCLE_ACTION_OVERRIDES above is forced to
+# park_mode="parking_depth" ("drift at depth") in _derive_cycle_action,
+# regardless of what the mode-voted/default action classified it as --
+# overriding a voted park_on_bottom (whose GROUNDED flag we haven't
+# individually confirmed the way 3902607's has) or drift_on_surface alike.
+# A float in CYCLE_ACTION_OVERRIDES is exempt because its park_mode has
+# already been deliberately set from confirmed hardware parameters, not
+# left to the vote -- forcing it again here would fight that override.
+# Only applied when a target_depth is actually known: target_depth is None
+# only for a genuine drift_on_surface vote or a fresh float with fewer than
+# 2 cycles (default_action()), and there's no depth to drift at in that
+# case, so park_mode is left as derived rather than forced to a made-up depth.
+
 
 def run(config_path: Path | None = None) -> None:
     run_t0 = time.monotonic()
@@ -621,6 +634,8 @@ def _derive_cycle_action(float_id: str) -> tuple[ControlAction, list[dict]]:
     override = CYCLE_ACTION_OVERRIDES.get(float_id)
     if override:
         action = dataclasses.replace(action, **override)
+    elif action.park_mode != "parking_depth" and action.target_depth is not None:
+        action = dataclasses.replace(action, park_mode="parking_depth")
 
     return action, cycles
 

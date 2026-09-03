@@ -395,6 +395,15 @@
             cycles has Argo's own <code>GROUNDED</code> QC flag set (the float's own onboard
             determination of whether it touched the seabed that cycle) — a single non-grounded
             cycle in the window is treated as genuine uncertainty, not outvoted by a majority.
+            After the vote (or <code>default_action()</code> fallback), every float is then
+            forced to <code>park_mode="parking_depth"</code> ("drift at depth") regardless of
+            what it voted, <strong>except</strong> a float listed in <code>run.py</code>'s
+            <code>CYCLE_ACTION_OVERRIDES</code> (currently just float 3902607, whose descent/ascent
+            speeds and <code>park_on_bottom</code> classification come from its own confirmed
+            deployment parameters rather than the vote) — forcing it too would fight that
+            deliberate override. The force is skipped when the derived <code>target_depth</code>
+            is <code>None</code> (a genuine <code>drift_on_surface</code> vote, or a fresh float
+            with fewer than 2 usable cycles), since there's no known depth to drift at.
             Runs first so this round's own simulation already uses the freshest estimate.
           </div>
         </div>

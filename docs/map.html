@@ -478,13 +478,21 @@ const map = L.map('map', {
 
 L.control.zoom({ position: 'topright' }).addTo(map);
 
+// CARTO's basemaps.cartocdn.com now serves an "API key required" watermark
+// tile to anonymous callers instead of the free Positron style it used to.
+// Esri's hosted Light Gray Canvas + Reference tiles remain free/keyless and
+// give the same muted, low-chroma look this dashboard's palette wants.
 L.tileLayer(
-  'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+  'https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
   {
-    attribution: '&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
-    subdomains: 'abcd',
-    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.esri.com/">Esri</a>, HERE, Garmin, &copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> contributors, GIS community',
+    maxZoom: 16,
   }
+).addTo(map);
+
+L.tileLayer(
+  'https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}',
+  { maxZoom: 16 }
 ).addTo(map);
 
 // ─── State ────────────────────────────────────────────────────────────────────
