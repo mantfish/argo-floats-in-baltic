@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-09-13T04:45:23.246245",
+  "updated_at": "2026-09-13T13:29:50.235213",
   "model_colors": {
     "cmems": "#00D4FF",
     "fcoo": "#FF8C42"
@@ -14,8 +14,8 @@
       "mean_error_pct": 205.72,
       "median_error_pct": 101.61,
       "recent_7d": {
-        "n": 25,
-        "mean_km": 2.57
+        "n": 21,
+        "mean_km": 2.88
       },
       "recent_30d": {
         "n": 103,
@@ -31,8 +31,8 @@
       "mean_error_pct": 126.01,
       "median_error_pct": 100.0,
       "recent_7d": {
-        "n": 11,
-        "mean_km": 3.16
+        "n": 10,
+        "mean_km": 3.48
       },
       "recent_30d": {
         "n": 52,
