@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-09-18T13:18:49.531295",
+  "updated_at": "2026-09-18T19:18:06.654145",
   "model_colors": {
     "cmems": "#00D4FF",
     "fcoo": "#FF8C42"
@@ -8,18 +8,18 @@
     "cmems": {
       "display_name": "CMEMS Baltic",
       "color": "#00D4FF",
-      "n_total": 126,
-      "mean_error_km": 1.29,
+      "n_total": 127,
+      "mean_error_km": 1.28,
       "median_error_km": 0.43,
       "mean_error_pct": 295.95,
       "median_error_pct": 106.94,
       "recent_7d": {
-        "n": 21,
-        "mean_km": 2.46
+        "n": 22,
+        "mean_km": 2.36
       },
       "recent_30d": {
         "n": 111,
-        "mean_km": 1.32
+        "mean_km": 1.31
       }
     },
     "fcoo": {
@@ -35,12 +35,19 @@
         "mean_km": 1.67
       },
       "recent_30d": {
-        "n": 56,
-        "mean_km": 0.98
+        "n": 55,
+        "mean_km": 1.0
       }
     }
   },
   "recent_events": [
+    {
+      "float_id": "2904032",
+      "model": "cmems",
+      "t": "2026-09-16T15:42:00",
+      "error_km": 0.18,
+      "error_pct": null
+    },
     {
       "float_id": "2904032",
       "model": "cmems",
@@ -190,14 +197,14 @@
     },
     {
       "float_id": "7902460",
-      "model": "fcoo",
+      "model": "cmems",
       "t": "2026-09-13T17:55:27",
       "error_km": 0.0,
       "error_pct": null
     },
     {
       "float_id": "7902460",
-      "model": "cmems",
+      "model": "fcoo",
       "t": "2026-09-13T17:55:27",
       "error_km": 0.0,
       "error_pct": null
@@ -239,24 +246,17 @@
     },
     {
       "float_id": "7902194",
-      "model": "fcoo",
-      "t": "2026-09-12T02:15:00",
-      "error_km": 1.11,
-      "error_pct": 100.0
-    },
-    {
-      "float_id": "7902194",
       "model": "cmems",
       "t": "2026-09-12T02:15:00",
       "error_km": 0.43,
       "error_pct": 39.09
     },
     {
-      "float_id": "6990707",
-      "model": "cmems",
-      "t": "2026-09-11T20:22:00",
-      "error_km": 13.37,
-      "error_pct": 77.68
+      "float_id": "7902194",
+      "model": "fcoo",
+      "t": "2026-09-12T02:15:00",
+      "error_km": 1.11,
+      "error_pct": 100.0
     },
     {
       "float_id": "6990707",
@@ -266,25 +266,25 @@
       "error_pct": 47.96
     },
     {
+      "float_id": "6990707",
+      "model": "cmems",
+      "t": "2026-09-11T20:22:00",
+      "error_km": 13.37,
+      "error_pct": 77.68
+    },
+    {
+      "float_id": "7902460",
+      "model": "cmems",
+      "t": "2026-09-11T06:12:15",
+      "error_km": 0.0,
+      "error_pct": null
+    },
+    {
       "float_id": "7902460",
       "model": "fcoo",
       "t": "2026-09-11T06:12:15",
       "error_km": 0.0,
       "error_pct": null
-    },
-    {
-      "float_id": "7902460",
-      "model": "cmems",
-      "t": "2026-09-11T06:12:15",
-      "error_km": 0.0,
-      "error_pct": null
-    },
-    {
-      "float_id": "7902460",
-      "model": "cmems",
-      "t": "2026-09-11T05:43:01",
-      "error_km": 1.61,
-      "error_pct": 121.04
     },
     {
       "float_id": "7902460",
@@ -292,6 +292,13 @@
       "t": "2026-09-11T05:43:01",
       "error_km": 1.33,
       "error_pct": 100.0
+    },
+    {
+      "float_id": "7902460",
+      "model": "cmems",
+      "t": "2026-09-11T05:43:01",
+      "error_km": 1.61,
+      "error_pct": 121.04
     },
     {
       "float_id": "3902607",
@@ -316,16 +323,16 @@
     },
     {
       "float_id": "7902194",
-      "model": "cmems",
+      "model": "fcoo",
       "t": "2026-09-10T00:28:00",
-      "error_km": 0.09,
+      "error_km": 0.0,
       "error_pct": null
     },
     {
       "float_id": "7902194",
-      "model": "fcoo",
+      "model": "cmems",
       "t": "2026-09-10T00:28:00",
-      "error_km": 0.0,
+      "error_km": 0.09,
       "error_pct": null
     },
     {
@@ -382,13 +389,6 @@
       "model": "cmems",
       "t": "2026-09-08T17:46:52",
       "error_km": 0.3,
-      "error_pct": null
-    },
-    {
-      "float_id": "7902460",
-      "model": "fcoo",
-      "t": "2026-09-08T17:46:52",
-      "error_km": 0.0,
       "error_pct": null
     }
   ]
