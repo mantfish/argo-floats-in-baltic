@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-09-30T21:09:56.839198",
+  "updated_at": "2026-10-01T05:51:48.381519",
   "model_colors": {
     "cmems": "#00D4FF",
     "fcoo": "#FF8C42"
@@ -8,39 +8,81 @@
     "cmems": {
       "display_name": "CMEMS Baltic",
       "color": "#00D4FF",
-      "n_total": 179,
-      "mean_error_km": 1.25,
-      "median_error_km": 0.48,
-      "mean_error_pct": 350.0,
-      "median_error_pct": 141.87,
+      "n_total": 183,
+      "mean_error_km": 1.32,
+      "median_error_km": 0.53,
+      "mean_error_pct": 346.99,
+      "median_error_pct": 142.27,
       "recent_7d": {
-        "n": 19,
-        "mean_km": 1.43
+        "n": 23,
+        "mean_km": 2.01
       },
       "recent_30d": {
-        "n": 118,
-        "mean_km": 1.53
+        "n": 120,
+        "mean_km": 1.65
       }
     },
     "fcoo": {
       "display_name": "FCOO GETM",
       "color": "#FF8C42",
-      "n_total": 90,
-      "mean_error_km": 0.8,
-      "median_error_km": 0.11,
-      "mean_error_pct": 167.45,
+      "n_total": 92,
+      "mean_error_km": 0.94,
+      "median_error_km": 0.17,
+      "mean_error_pct": 171.08,
       "median_error_pct": 100.0,
       "recent_7d": {
-        "n": 10,
-        "mean_km": 1.0
+        "n": 12,
+        "mean_km": 2.03
       },
       "recent_30d": {
-        "n": 56,
-        "mean_km": 1.11
+        "n": 57,
+        "mean_km": 1.31
       }
     }
   },
   "recent_events": [
+    {
+      "float_id": "7902194",
+      "model": "fcoo",
+      "t": "2026-09-30T19:48:30",
+      "error_km": 3.24,
+      "error_pct": 386.55
+    },
+    {
+      "float_id": "7902194",
+      "model": "cmems",
+      "t": "2026-09-30T19:48:30",
+      "error_km": 2.99,
+      "error_pct": 355.98
+    },
+    {
+      "float_id": "6990707",
+      "model": "fcoo",
+      "t": "2026-09-30T14:44:30",
+      "error_km": 11.05,
+      "error_pct": 119.23
+    },
+    {
+      "float_id": "6990707",
+      "model": "cmems",
+      "t": "2026-09-30T14:44:30",
+      "error_km": 13.13,
+      "error_pct": 141.61
+    },
+    {
+      "float_id": "2904032",
+      "model": "cmems",
+      "t": "2026-09-30T07:48:00",
+      "error_km": 2.42,
+      "error_pct": 484.28
+    },
+    {
+      "float_id": "3902607",
+      "model": "cmems",
+      "t": "2026-09-30T07:25:00",
+      "error_km": 0.55,
+      "error_pct": 99.13
+    },
     {
       "float_id": "7902194",
       "model": "fcoo",
@@ -113,17 +155,17 @@
     },
     {
       "float_id": "6990707",
-      "model": "cmems",
-      "t": "2026-09-26T11:30:30",
-      "error_km": 1.24,
-      "error_pct": 143.71
-    },
-    {
-      "float_id": "6990707",
       "model": "fcoo",
       "t": "2026-09-26T11:30:30",
       "error_km": 0.87,
       "error_pct": 100.0
+    },
+    {
+      "float_id": "6990707",
+      "model": "cmems",
+      "t": "2026-09-26T11:30:30",
+      "error_km": 1.24,
+      "error_pct": 143.71
     },
     {
       "float_id": "2904032",
@@ -176,13 +218,6 @@
     },
     {
       "float_id": "7902194",
-      "model": "cmems",
-      "t": "2026-09-24T14:32:00",
-      "error_km": 0.1,
-      "error_pct": null
-    },
-    {
-      "float_id": "7902194",
       "model": "fcoo",
       "t": "2026-09-24T14:32:00",
       "error_km": 0.0,
@@ -190,10 +225,10 @@
     },
     {
       "float_id": "7902194",
-      "model": "fcoo",
-      "t": "2026-09-24T13:35:00",
-      "error_km": 0.35,
-      "error_pct": 321.28
+      "model": "cmems",
+      "t": "2026-09-24T14:32:00",
+      "error_km": 0.1,
+      "error_pct": null
     },
     {
       "float_id": "7902194",
@@ -201,6 +236,13 @@
       "t": "2026-09-24T13:35:00",
       "error_km": 1.62,
       "error_pct": 1495.19
+    },
+    {
+      "float_id": "7902194",
+      "model": "fcoo",
+      "t": "2026-09-24T13:35:00",
+      "error_km": 0.35,
+      "error_pct": 321.28
     },
     {
       "float_id": "2904032",
@@ -218,14 +260,14 @@
     },
     {
       "float_id": "6990707",
-      "model": "fcoo",
+      "model": "cmems",
       "t": "2026-09-24T09:30:00",
       "error_km": 0.0,
       "error_pct": null
     },
     {
       "float_id": "6990707",
-      "model": "cmems",
+      "model": "fcoo",
       "t": "2026-09-24T09:30:00",
       "error_km": 0.0,
       "error_pct": null
@@ -281,14 +323,14 @@
     },
     {
       "float_id": "7902194",
-      "model": "cmems",
+      "model": "fcoo",
       "t": "2026-09-22T12:26:00",
       "error_km": 0.0,
       "error_pct": null
     },
     {
       "float_id": "7902194",
-      "model": "fcoo",
+      "model": "cmems",
       "t": "2026-09-22T12:26:00",
       "error_km": 0.0,
       "error_pct": null
@@ -316,14 +358,14 @@
     },
     {
       "float_id": "6990707",
-      "model": "fcoo",
+      "model": "cmems",
       "t": "2026-09-22T07:23:00",
       "error_km": 0.0,
       "error_pct": null
     },
     {
       "float_id": "6990707",
-      "model": "cmems",
+      "model": "fcoo",
       "t": "2026-09-22T07:23:00",
       "error_km": 0.0,
       "error_pct": null
@@ -346,48 +388,6 @@
       "float_id": "7902460",
       "model": "fcoo",
       "t": "2026-09-21T05:59:39",
-      "error_km": 0.0,
-      "error_pct": null
-    },
-    {
-      "float_id": "7902460",
-      "model": "cmems",
-      "t": "2026-09-21T05:59:39",
-      "error_km": 0.0,
-      "error_pct": null
-    },
-    {
-      "float_id": "7902460",
-      "model": "cmems",
-      "t": "2026-09-21T05:32:57",
-      "error_km": 1.48,
-      "error_pct": 393.11
-    },
-    {
-      "float_id": "7902460",
-      "model": "fcoo",
-      "t": "2026-09-21T05:32:57",
-      "error_km": 0.38,
-      "error_pct": 100.0
-    },
-    {
-      "float_id": "3902607",
-      "model": "cmems",
-      "t": "2026-09-20T18:05:00",
-      "error_km": 0.13,
-      "error_pct": null
-    },
-    {
-      "float_id": "3902607",
-      "model": "cmems",
-      "t": "2026-09-20T17:24:40",
-      "error_km": 1.03,
-      "error_pct": 96.72
-    },
-    {
-      "float_id": "2904032",
-      "model": "cmems",
-      "t": "2026-09-20T13:59:00",
       "error_km": 0.0,
       "error_pct": null
     }
