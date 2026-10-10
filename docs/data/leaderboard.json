@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-10-09T21:10:51.611307",
+  "updated_at": "2026-10-10T05:50:05.985144",
   "model_colors": {
     "cmems": "#00D4FF",
     "fcoo": "#FF8C42"
@@ -8,39 +8,53 @@
     "cmems": {
       "display_name": "CMEMS Baltic",
       "color": "#00D4FF",
-      "n_total": 207,
+      "n_total": 208,
       "mean_error_km": 1.69,
-      "median_error_km": 0.56,
-      "mean_error_pct": 367.07,
-      "median_error_pct": 148.49,
+      "median_error_km": 0.57,
+      "mean_error_pct": 365.0,
+      "median_error_pct": 146.1,
       "recent_7d": {
         "n": 15,
-        "mean_km": 6.65
+        "mean_km": 6.31
       },
       "recent_30d": {
-        "n": 109,
-        "mean_km": 2.3
+        "n": 108,
+        "mean_km": 2.29
       }
     },
     "fcoo": {
       "display_name": "FCOO GETM",
       "color": "#FF8C42",
-      "n_total": 106,
-      "mean_error_km": 1.38,
-      "median_error_km": 0.33,
-      "mean_error_pct": 185.14,
+      "n_total": 107,
+      "mean_error_km": 1.37,
+      "median_error_km": 0.35,
+      "mean_error_pct": 183.67,
       "median_error_pct": 100.0,
       "recent_7d": {
         "n": 9,
-        "mean_km": 6.43
+        "mean_km": 6.18
       },
       "recent_30d": {
-        "n": 57,
-        "mean_km": 1.91
+        "n": 56,
+        "mean_km": 1.92
       }
     }
   },
   "recent_events": [
+    {
+      "float_id": "7902194",
+      "model": "fcoo",
+      "t": "2026-10-09T03:49:30",
+      "error_km": 1.32,
+      "error_pct": 100.0
+    },
+    {
+      "float_id": "7902194",
+      "model": "cmems",
+      "t": "2026-10-09T03:49:30",
+      "error_km": 1.46,
+      "error_pct": 110.83
+    },
     {
       "float_id": "6990707",
       "model": "cmems",
@@ -141,17 +155,17 @@
     },
     {
       "float_id": "6990707",
-      "model": "cmems",
-      "t": "2026-10-04T18:51:30",
-      "error_km": 1.98,
-      "error_pct": 393.71
-    },
-    {
-      "float_id": "6990707",
       "model": "fcoo",
       "t": "2026-10-04T18:51:30",
       "error_km": 2.09,
       "error_pct": 415.29
+    },
+    {
+      "float_id": "6990707",
+      "model": "cmems",
+      "t": "2026-10-04T18:51:30",
+      "error_km": 1.98,
+      "error_pct": 393.71
     },
     {
       "float_id": "2904032",
@@ -239,14 +253,14 @@
     },
     {
       "float_id": "7902460",
-      "model": "cmems",
+      "model": "fcoo",
       "t": "2026-10-01T05:00:02",
       "error_km": 0.0,
       "error_pct": null
     },
     {
       "float_id": "7902460",
-      "model": "fcoo",
+      "model": "cmems",
       "t": "2026-10-01T05:00:02",
       "error_km": 0.0,
       "error_pct": null
@@ -281,24 +295,17 @@
     },
     {
       "float_id": "6990707",
+      "model": "cmems",
+      "t": "2026-09-30T15:42:00",
+      "error_km": 0.0,
+      "error_pct": null
+    },
+    {
+      "float_id": "6990707",
       "model": "fcoo",
       "t": "2026-09-30T15:42:00",
       "error_km": 0.0,
       "error_pct": null
-    },
-    {
-      "float_id": "6990707",
-      "model": "cmems",
-      "t": "2026-09-30T15:42:00",
-      "error_km": 0.0,
-      "error_pct": null
-    },
-    {
-      "float_id": "6990707",
-      "model": "cmems",
-      "t": "2026-09-30T14:44:30",
-      "error_km": 13.13,
-      "error_pct": 141.61
     },
     {
       "float_id": "6990707",
@@ -306,6 +313,13 @@
       "t": "2026-09-30T14:44:30",
       "error_km": 11.05,
       "error_pct": 119.23
+    },
+    {
+      "float_id": "6990707",
+      "model": "cmems",
+      "t": "2026-09-30T14:44:30",
+      "error_km": 13.13,
+      "error_pct": 141.61
     },
     {
       "float_id": "2904032",
@@ -376,20 +390,6 @@
       "t": "2026-09-28T16:39:52",
       "error_km": 5.7,
       "error_pct": 2293.72
-    },
-    {
-      "float_id": "6990707",
-      "model": "cmems",
-      "t": "2026-09-28T13:29:00",
-      "error_km": 3.65,
-      "error_pct": 697.0
-    },
-    {
-      "float_id": "6990707",
-      "model": "fcoo",
-      "t": "2026-09-28T13:29:00",
-      "error_km": 2.74,
-      "error_pct": 522.96
     }
   ]
 }
