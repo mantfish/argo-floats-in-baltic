@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-10-22T20:09:53.538126",
+  "updated_at": "2026-10-22T23:34:25.692391",
   "model_colors": {
     "cmems": "#00D4FF",
     "fcoo": "#FF8C42"
@@ -14,8 +14,8 @@
       "mean_error_pct": 386.17,
       "median_error_pct": 143.71,
       "recent_7d": {
-        "n": 22,
-        "mean_km": 2.5
+        "n": 21,
+        "mean_km": 2.43
       },
       "recent_30d": {
         "n": 102,
