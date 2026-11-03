@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-11-02T18:49:08.541314",
+  "updated_at": "2026-11-03T12:03:25.262697",
   "model_colors": {
     "cmems": "#00D4FF",
     "fcoo": "#FF8C42"
@@ -8,39 +8,95 @@
     "cmems": {
       "display_name": "CMEMS Baltic",
       "color": "#00D4FF",
-      "n_total": 299,
-      "mean_error_km": 1.76,
-      "median_error_km": 0.56,
-      "mean_error_pct": 427.35,
+      "n_total": 304,
+      "mean_error_km": 1.79,
+      "median_error_km": 0.58,
+      "mean_error_pct": 427.8,
       "median_error_pct": 150.35,
       "recent_7d": {
-        "n": 21,
-        "mean_km": 2.23
+        "n": 23,
+        "mean_km": 2.65
       },
       "recent_30d": {
-        "n": 103,
-        "mean_km": 2.37
+        "n": 107,
+        "mean_km": 2.46
       }
     },
     "fcoo": {
       "display_name": "FCOO GETM",
       "color": "#FF8C42",
-      "n_total": 151,
-      "mean_error_km": 1.37,
-      "median_error_km": 0.32,
-      "mean_error_pct": 180.26,
+      "n_total": 154,
+      "mean_error_km": 1.35,
+      "median_error_km": 0.33,
+      "mean_error_pct": 178.32,
       "median_error_pct": 100.0,
       "recent_7d": {
-        "n": 9,
-        "mean_km": 1.85
+        "n": 12,
+        "mean_km": 1.5
       },
       "recent_30d": {
-        "n": 51,
-        "mean_km": 1.94
+        "n": 54,
+        "mean_km": 1.86
       }
     }
   },
   "recent_events": [
+    {
+      "float_id": "6990707",
+      "model": "fcoo",
+      "t": "2026-11-02T22:33:30",
+      "error_km": 0.48,
+      "error_pct": 100.0
+    },
+    {
+      "float_id": "6990707",
+      "model": "cmems",
+      "t": "2026-11-02T22:33:30",
+      "error_km": 5.46,
+      "error_pct": 1143.5
+    },
+    {
+      "float_id": "2904032",
+      "model": "cmems",
+      "t": "2026-11-02T14:40:30",
+      "error_km": 1.64,
+      "error_pct": 432.21
+    },
+    {
+      "float_id": "7902460",
+      "model": "fcoo",
+      "t": "2026-11-02T12:44:32",
+      "error_km": 0.8,
+      "error_pct": 100.0
+    },
+    {
+      "float_id": "7902460",
+      "model": "cmems",
+      "t": "2026-11-02T12:44:32",
+      "error_km": 0.92,
+      "error_pct": 114.32
+    },
+    {
+      "float_id": "3902607",
+      "model": "cmems",
+      "t": "2026-11-02T03:22:40",
+      "error_km": 12.37,
+      "error_pct": 100.0
+    },
+    {
+      "float_id": "7902194",
+      "model": "fcoo",
+      "t": "2026-11-01T04:02:00",
+      "error_km": 0.0,
+      "error_pct": null
+    },
+    {
+      "float_id": "7902194",
+      "model": "cmems",
+      "t": "2026-11-01T04:02:00",
+      "error_km": 0.0,
+      "error_pct": null
+    },
     {
       "float_id": "7902194",
       "model": "cmems",
@@ -50,17 +106,17 @@
     },
     {
       "float_id": "6990707",
-      "model": "fcoo",
-      "t": "2026-10-31T21:09:00",
-      "error_km": 2.41,
-      "error_pct": 375.07
-    },
-    {
-      "float_id": "6990707",
       "model": "cmems",
       "t": "2026-10-31T21:09:00",
       "error_km": 10.24,
       "error_pct": 1593.8
+    },
+    {
+      "float_id": "6990707",
+      "model": "fcoo",
+      "t": "2026-10-31T21:09:00",
+      "error_km": 2.41,
+      "error_pct": 375.07
     },
     {
       "float_id": "2904032",
@@ -78,17 +134,17 @@
     },
     {
       "float_id": "7902460",
-      "model": "fcoo",
-      "t": "2026-10-31T01:12:22",
-      "error_km": 4.48,
-      "error_pct": 100.0
-    },
-    {
-      "float_id": "7902460",
       "model": "cmems",
       "t": "2026-10-31T01:12:22",
       "error_km": 5.53,
       "error_pct": 123.37
+    },
+    {
+      "float_id": "7902460",
+      "model": "fcoo",
+      "t": "2026-10-31T01:12:22",
+      "error_km": 4.48,
+      "error_pct": 100.0
     },
     {
       "float_id": "3902607",
@@ -162,14 +218,14 @@
     },
     {
       "float_id": "7902460",
-      "model": "fcoo",
+      "model": "cmems",
       "t": "2026-10-28T14:05:55",
       "error_km": 0.0,
       "error_pct": null
     },
     {
       "float_id": "7902460",
-      "model": "cmems",
+      "model": "fcoo",
       "t": "2026-10-28T14:05:55",
       "error_km": 0.0,
       "error_pct": null
@@ -218,17 +274,17 @@
     },
     {
       "float_id": "6990707",
-      "model": "fcoo",
-      "t": "2026-10-27T16:34:00",
-      "error_km": 0.22,
-      "error_pct": 100.0
-    },
-    {
-      "float_id": "6990707",
       "model": "cmems",
       "t": "2026-10-27T16:34:00",
       "error_km": 1.26,
       "error_pct": 567.21
+    },
+    {
+      "float_id": "6990707",
+      "model": "fcoo",
+      "t": "2026-10-27T16:34:00",
+      "error_km": 0.22,
+      "error_pct": 100.0
     },
     {
       "float_id": "3902607",
@@ -274,17 +330,17 @@
     },
     {
       "float_id": "7902194",
-      "model": "fcoo",
-      "t": "2026-10-25T19:40:30",
-      "error_km": 4.24,
-      "error_pct": 1300.25
-    },
-    {
-      "float_id": "7902194",
       "model": "cmems",
       "t": "2026-10-25T19:40:30",
       "error_km": 5.21,
       "error_pct": 1594.96
+    },
+    {
+      "float_id": "7902194",
+      "model": "fcoo",
+      "t": "2026-10-25T19:40:30",
+      "error_km": 4.24,
+      "error_pct": 1300.25
     },
     {
       "float_id": "2904032",
@@ -295,24 +351,17 @@
     },
     {
       "float_id": "6990707",
+      "model": "cmems",
+      "t": "2026-10-25T16:10:00",
+      "error_km": 0.0,
+      "error_pct": null
+    },
+    {
+      "float_id": "6990707",
       "model": "fcoo",
       "t": "2026-10-25T16:10:00",
       "error_km": 0.0,
       "error_pct": null
-    },
-    {
-      "float_id": "6990707",
-      "model": "cmems",
-      "t": "2026-10-25T16:10:00",
-      "error_km": 0.0,
-      "error_pct": null
-    },
-    {
-      "float_id": "6990707",
-      "model": "cmems",
-      "t": "2026-10-25T15:04:30",
-      "error_km": 5.18,
-      "error_pct": 396.43
     },
     {
       "float_id": "6990707",
@@ -320,6 +369,13 @@
       "t": "2026-10-25T15:04:30",
       "error_km": 1.26,
       "error_pct": 96.66
+    },
+    {
+      "float_id": "6990707",
+      "model": "cmems",
+      "t": "2026-10-25T15:04:30",
+      "error_km": 5.18,
+      "error_pct": 396.43
     },
     {
       "float_id": "3902607",
@@ -334,62 +390,6 @@
       "t": "2026-10-24T06:57:00",
       "error_km": 0.14,
       "error_pct": null
-    },
-    {
-      "float_id": "2904044",
-      "model": "cmems",
-      "t": "2026-10-23T20:28:32",
-      "error_km": 1.29,
-      "error_pct": 403.03
-    },
-    {
-      "float_id": "2904032",
-      "model": "cmems",
-      "t": "2026-10-23T19:49:30",
-      "error_km": 5.91,
-      "error_pct": 3995.73
-    },
-    {
-      "float_id": "7902194",
-      "model": "fcoo",
-      "t": "2026-10-23T17:40:00",
-      "error_km": 0.64,
-      "error_pct": 104.74
-    },
-    {
-      "float_id": "7902194",
-      "model": "cmems",
-      "t": "2026-10-23T17:40:00",
-      "error_km": 0.86,
-      "error_pct": 139.83
-    },
-    {
-      "float_id": "7902460",
-      "model": "cmems",
-      "t": "2026-10-23T14:47:22",
-      "error_km": 0.04,
-      "error_pct": null
-    },
-    {
-      "float_id": "7902460",
-      "model": "cmems",
-      "t": "2026-10-23T14:18:41",
-      "error_km": 5.53,
-      "error_pct": 600.63
-    },
-    {
-      "float_id": "6990707",
-      "model": "fcoo",
-      "t": "2026-10-23T12:47:00",
-      "error_km": 0.66,
-      "error_pct": 100.0
-    },
-    {
-      "float_id": "6990707",
-      "model": "cmems",
-      "t": "2026-10-23T12:47:00",
-      "error_km": 2.39,
-      "error_pct": 362.33
     }
   ]
 }
