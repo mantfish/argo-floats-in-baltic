@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-11-04T00:43:01.703085",
+  "updated_at": "2026-11-04T12:15:44.989182",
   "model_colors": {
     "cmems": "#00D4FF",
     "fcoo": "#FF8C42"
@@ -18,8 +18,8 @@
         "mean_km": 2.48
       },
       "recent_30d": {
-        "n": 106,
-        "mean_km": 2.41
+        "n": 105,
+        "mean_km": 2.43
       }
     },
     "fcoo": {
